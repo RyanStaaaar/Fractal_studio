@@ -5,25 +5,29 @@ import render
 from PIL import ImageDraw, ImageFont
 
 #parametres julia
-size = 10
-n_iter = 100
+size = 200
+n_iter = 50
 borne = 2
+color_0 = render.Color(255,0,30)
+color_1 = render.Color(0,50,200)
+scale=render.Color_scale(color_0, color_1)
 
-#parametres metagit
-meta_size = 1000
+#parametres meta
+meta_size = 8000
 
 # initialisation du meta-plan
 meta_plan = render.Plan(meta_size)
+
 
 
 for x in range(-meta_size//(size*2),meta_size//(size*2)+1) :
     
     for y in range(-meta_size//(size*2),meta_size//(size*2)+1) :
         #print(-meta_size//(size*2),meta_size//(size*2))
-        c=complex.Complex(x/(meta_size//size)*4, y/(meta_size/size)*4)
+        c=complex.Complex(x/(meta_size/size)*4, y/(meta_size/size)*4)
         print(c)
         f=iteration.Poly(1,0,c)
-        j=julia.julia_picture(f=f, size=size, n_iter=n_iter, borne=borne)
+        j=julia.julia_picture(scale, f=f, size=size, n_iter=n_iter, borne=borne)
         meta_plan.paste(j,(x*size- size//2,y*size- size//2))
 meta_plan.display()
 

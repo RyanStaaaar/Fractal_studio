@@ -5,7 +5,7 @@ from PIL import ImageDraw, ImageFont
 from math import pi
 
 
-def julia_picture(f: Poly, size = 10, n_iter = 10, borne = 2) :
+def julia_picture(scale ,f: Poly, size = 10, n_iter = 10, borne = 2, ) :
     cons=2
     step = pi/size
     # initialisation du plan
@@ -14,14 +14,18 @@ def julia_picture(f: Poly, size = 10, n_iter = 10, borne = 2) :
         for y in range(-size//cons, size//cons) :
             z= complex.Complex(step*x,step*y)
             escape_speed = f.orbit_behaviour(z, n_iter, n_tot=n_iter, B=borne)
-            plan.draw_point((x,y),color=(escape_speed, escape_speed,escape_speed))
+            plan.draw_point((x,y),color=(scale.level(escape_speed/255)))
     return plan
 if __name__=="__main__" :
     a=1
     b=0
-    c=complex.Complex(0, -0.75)
+    c=complex.Complex(-0.4, -0.6)
     f=iteration.Poly(a,b,c)
-    j=julia_picture(f,size=100, n_iter = 100)
+    color_0=render.Color.red
+    color_1= render.Color.blue
+    scale= render.Color_scale(color_0, color_1)
+
+    j=julia_picture(scale, f,size=1000, n_iter = 100)
     j.display()
 
 
