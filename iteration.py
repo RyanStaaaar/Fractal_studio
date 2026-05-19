@@ -21,7 +21,21 @@ class Poly :
                 return False
             else :
                 return self.orbit_bounded(f_z, n-1, B) 
-        
+    def orbit_behaviour(self, z, n, n_tot=100, B=2):
+        if n==0 :
+            return 0
+        else : 
+            f_z = self.evaluate(z)
+            mod_f_z = f_z.modulus()
+            if mod_f_z >B :
+                return int(255*n/n_tot)
+            else :
+                return self.orbit_behaviour(f_z, n-1, n_tot, B)
+
+        mod_f_z = f_z.modulus()
+        if n==1 :
+            return (mod_f_z< B)
+
 
 if __name__ == "__main__" :
     f = Poly(1,1,0.1)
