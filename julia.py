@@ -5,7 +5,7 @@ from PIL import ImageDraw, ImageFont
 from math import pi
 
 
-def julia_picture(scale ,f: Poly, size = 10, n_iter = 10, borne = 2, ) :
+def julia_picture(scale ,f: iteration.Poly, size = 10, n_iter = 10, borne = 2, ) :
     cons=2
     step = pi/size
     # initialisation du plan
@@ -21,11 +21,11 @@ if __name__=="__main__" :
     b=0
     c=complex.Complex(-0.4, -0.6)
     f=iteration.Poly(a,b,c)
-    color_0=render.Color.red
-    color_1= render.Color.blue
+    color_0=render.Color.white
+    color_1= render.Color.black
     scale= render.Color_scale(color_0, color_1)
 
-    j=julia_picture(scale, f,size=1000, n_iter = 100)
+    j=julia_picture(scale, f,size=500, n_iter = 50)
     j.display()
 
 

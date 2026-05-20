@@ -12,7 +12,7 @@ class Complex :
         return NotImplemented
     def __radd__(self, autre) :
         return self.__add__(autre)
-    def __sub__(self, autre : Complex ) :
+    def __sub__(self, autre) :
         if isinstance(autre, (int,float)) :
             return Complex(self.real-autre, self.im)
         if isinstance(autre, Complex) :
@@ -21,6 +21,8 @@ class Complex :
     def __rsub__(self,autre) :
         if isinstance(autre, (int,float)) :
             return Complex(autre - self.real, -self.im)
+        else :
+            return NotImplemented
     def __mul__(self, autre : Complex ) :
         if isinstance(autre, (int,float)) :
             return Complex(self.real*autre,self.im*autre)
