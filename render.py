@@ -1,6 +1,6 @@
+from __future__ import annotations
 from PIL import Image, ImageDraw
 import numpy as np
-
 
 class Color : 
     def __init__(self, r=255, g=255, b=255) :
@@ -49,26 +49,10 @@ class Color_scale:
         return self.color_0.blend(self.color_1, lambda_)
         
 
-class Plan :
-    def __init__(self, size) :
-        self.canvas = Image.new("RGB", (size,size), color = (Color.white).get_rgb())
-        self.centre = (size//2, size//2) # le centre est plus ou moins le vrai centre
-        self.figure = ImageDraw.Draw(self.canvas)
-    def draw_point(self,coordinates, color = Color.black) :
-        self.figure.point((coordinates[0] + self.centre[0], coordinates[1] + self.centre[1]), fill=color.get_rgb())
-    def display(self) :
-        return self.canvas.show()
-    def paste(self, autre_plan, coordinates) :
-        self.canvas.paste(autre_plan.canvas, (coordinates[0] + self.centre[0], coordinates[1] + self.centre[1]))
-
 def coloriser(V, scale):
     c0 = np.array(scale.color_0.get_rgb())
     c1 = np.array(scale.color_1.get_rgb())
     s = V[:, :, None]                       # (H, W, 1) pour diffuser sur les 3 canaux ?
     return (c0 * (1 - s) + c1 * s).astype(np.uint8)       
     
-if __name__== "__main__" :
-    test = Plan(100)
-    test.draw_point((-50,0))
-    test.display()
-
+#if __name__== "__main__" :
