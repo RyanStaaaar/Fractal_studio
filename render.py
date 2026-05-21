@@ -1,4 +1,5 @@
 from PIL import Image, ImageDraw
+import numpy as np
 
 
 class Color : 
@@ -46,7 +47,6 @@ class Color_scale:
         self.color_1 = color_1
     def level(self, lambda_) :
         return self.color_0.blend(self.color_1, lambda_)
-    
         
 
 class Plan :
@@ -61,7 +61,11 @@ class Plan :
     def paste(self, autre_plan, coordinates) :
         self.canvas.paste(autre_plan.canvas, (coordinates[0] + self.centre[0], coordinates[1] + self.centre[1]))
 
-       
+def coloriser(V, scale):
+    c0 = np.array(scale.color_0.get_rgb())
+    c1 = np.array(scale.color_1.get_rgb())
+    s = V[:, :, None]                       # (H, W, 1) pour diffuser sur les 3 canaux ?
+    return (c0 * (1 - s) + c1 * s).astype(np.uint8)       
     
 if __name__== "__main__" :
     test = Plan(100)
