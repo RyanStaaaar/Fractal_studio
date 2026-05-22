@@ -2,11 +2,17 @@ import fractal
 import render
 from PIL import Image
 import iteration
-scale = render.Color_scale(render.Color.black, render.Color.white)
-f = iteration.Poly(1, 0, complex(-0.4, -0.601))
+import numpy as np
 
-V =fractal.julia(f,size=10000)  
-#V =fractal.mosaique_mandelbrot(size=100, n_sub=100, n=100)  
+borne = 1
+c = complex(np.random.uniform(-borne, borne), np.random.uniform(-borne, borne))
+print(c)
+scale = render.Color_scale(render.Color.black, render.Color.white)
+f = iteration.Poly(1, 0, c)
+
+
+V =fractal.julia(f,height=1964, width=3024, n=100)  
+#V =fractal.mosaique_mandelbrot(size=1000, n_sub=40, n=100)  
 C = render.coloriser(V, scale)                       
 im = Image.fromarray(C)
 im.show()
