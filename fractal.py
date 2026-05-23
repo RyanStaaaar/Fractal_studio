@@ -17,6 +17,14 @@ def julia(f, height, width, borne=2, n=100):
     X, Y = np.meshgrid(xs, ys)
     Z = X + 1j * Y
     return iteration.escape_speed(Z, f.a, f.b, f.c, n=100, B=2.0)
+def mandelbrot(height, width, seed = 0, borne=2, n=100):
+    borne_y = borne * height / width
+    xs = np.linspace(-borne, borne, width)
+    ys = np.linspace(-borne_y, borne_y, height)
+    X, Y = np.meshgrid(xs, ys)
+    C= X + 1j * Y
+    return iteration.mandelbrot(C, seed, n,)
+    
 
 
 def mosaique_mandelbrot(size=100, n_sub=11, borne_julia=2, borne_c=2, n=100):
