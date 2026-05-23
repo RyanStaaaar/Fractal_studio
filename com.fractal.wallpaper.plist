@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fractal.wallpaper</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- À ÉDITER : python de ton venv (avec Pillow, numpy, numba installés) -->
+        <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/myenv/bin/python3.14</string>
+        <!-- À ÉDITER : chemin du wrapper, DANS le dossier du dépôt -->
+        <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/test.py</string>
+    </array>
+
+    <!-- À ÉDITER : le dossier du dépôt, pour que les imports (fractal, render...) résolvent -->
+    <key>WorkingDirectory</key>
+    <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project</string>
+
+    <!-- tous les jours à 06:00 ; si le Mac dormait, launchd lance au réveil -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>6</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <!-- lance aussi une fois au chargement, pour voir l'effet immédiatement -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/fractal-wallpaper.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/fractal-wallpaper.err</string>
+</dict>
+</plist>
