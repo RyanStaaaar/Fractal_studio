@@ -58,9 +58,12 @@ class MainWindow:
     #  UI builders
     # ------------------------------------------------------------------ #
     def _build_fractal_canvas(self):
-        self.fractal_canvas = tk.Canvas(self.root, width=self.PREVIEW_W, height=self.PREVIEW_H)
+        self.fractal_canvas = tk.Canvas(self.root, width=self.PREVIEW_W, height=self.PREVIEW_H,
+                                        cursor="hand2")
         self.fractal_canvas.pack(padx=10, pady=(10, 4))
         self.fractal_item = self.fractal_canvas.create_image(0, 0, anchor="nw")
+        # clic sur l'aperçu -> ouvre la fractale en pleine résolution HD
+        self.fractal_canvas.bind("<Button-1>", self._show_hd_popup)
 
     def _build_gradient_canvas(self):
         self.grad_canvas = tk.Canvas(self.root, width=self.PREVIEW_W, height=self.GRAD_H)
@@ -193,11 +196,45 @@ class MainWindow:
         self.c_im.set(round(nc.imag, 4))
         self._recompute_fractal()
 
-    def _export_hd(self):
+    def _compute_hd(self) -> np.ndarray:
+        # calcule la fractale en pleine résolution (FULL_W x FULL_H) pour le c courant
         gen = fractal.FractalGenerator(self.FULL_H, self.FULL_W, self.N_ITER)
         poly = iteration.Poly(1, 0, self._current_c())
         V_full = gen.generate_julia(poly)
-        C = self._coloriser(V_full)
+        return self._coloriser(V_full)
+
+    def _show_hd_popup(self, *_):
+        # le calcul HD prend ~1 s : curseur d'attente pendant le rendu
+        self.root.config(cursor="watch")
+        self.root.update()
+        try:
+            C = self._compute_hd()
+        finally:
+            self.root.config(cursor="")
+
+        top = tk.Toplevel(self.root)
+        top.title(f"Fractale HD — {self.FULL_W}×{self.FULL_H}")
+
+        # fenêtre plafonnée à la taille de l'écran ; image scrollable en taille réelle
+        win_w = min(self.FULL_W, top.winfo_screenwidth() - 80)
+        win_h = min(self.FULL_H, top.winfo_screenheight() - 120)
+        top.geometry(f"{win_w}x{win_h}")
+
+        canvas = tk.Canvas(top, width=win_w, height=win_h)
+        hbar = tk.Scrollbar(top, orient="horizontal", command=canvas.xview)
+        vbar = tk.Scrollbar(top, orient="vertical", command=canvas.yview)
+        canvas.configure(xscrollcommand=hbar.set, yscrollcommand=vbar.set,
+                         scrollregion=(0, 0, self.FULL_W, self.FULL_H))
+        vbar.pack(side="right", fill="y")
+        hbar.pack(side="bottom", fill="x")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        photo = ImageTk.PhotoImage(Image.fromarray(C))
+        canvas.create_image(0, 0, anchor="nw", image=photo)
+        canvas.image = photo   # référence gardée (sinon le GC efface l'image)
+
+    def _export_hd(self):
+        C = self._compute_hd()
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"
         Image.fromarray(C).save(path)
