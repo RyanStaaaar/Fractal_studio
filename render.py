@@ -1,6 +1,7 @@
 from __future__ import annotations
 from PIL import Image
 import numpy as np
+import random
 
 class Color : 
     def __init__(self, r=255, g=255, b=255) :
@@ -140,3 +141,18 @@ class FractalRenderer:
 
     def save(self, image: np.ndarray, path) -> None:
         Image.fromarray(image).save(path)
+
+
+def make_random_palette() -> list:
+    """Tire une palette aléatoire : 5 positions triées + 5 couleurs (listes RGB mutables)."""
+    nuancier = [
+        Color(0, 0, 0), Color(255, 255, 255),
+        Color(116, 0, 184), Color(105, 48, 195),
+        Color(94, 96, 206), Color(83, 144, 217),
+        Color(78, 168, 222), Color(72, 191, 227),
+        Color(86, 207, 225), Color(100, 223, 223),
+        Color(114, 239, 221), Color(128, 255, 219),
+    ]
+    positions = sorted([0.0, random.uniform(0, 0.8), random.uniform(0, 0.8), random.uniform(0, 0.8), 1.0])
+    colors = [list(c.get_rgb()) for c in random.sample(nuancier, k=5)]
+    return [positions, colors]

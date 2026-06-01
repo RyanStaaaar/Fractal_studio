@@ -1,6 +1,5 @@
 from pathlib import Path
 from datetime import datetime
-import random
 import subprocess
 
 import numpy as np
@@ -25,9 +24,10 @@ class MainWindow:
         self.root = root
         self.root.title("Fractale de Julia + palette")
         self.output_dir = Path(__file__).parent / "Wallpapers"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.V_preview = None
-        self.palette = self._random_palette()
+        self.palette = render.make_random_palette()
         self.barre = np.linspace(np.zeros(self.GRAD_H), np.ones(self.GRAD_H), self.PREVIEW_W).T
         self.swatches: list[tk.Label] = []
 
@@ -50,19 +50,6 @@ class MainWindow:
     # ------------------------------------------------------------------ #
     #  Palette helpers
     # ------------------------------------------------------------------ #
-    def _random_palette(self) -> list:
-        nuancier = [
-            render.Color(0, 0, 0), render.Color(255, 255, 255),
-            render.Color(116, 0, 184), render.Color(105, 48, 195),
-            render.Color(94, 96, 206), render.Color(83, 144, 217),
-            render.Color(78, 168, 222), render.Color(72, 191, 227),
-            render.Color(86, 207, 225), render.Color(100, 223, 223),
-            render.Color(114, 239, 221), render.Color(128, 255, 219),
-        ]
-        positions = sorted([0.0, random.uniform(0, 0.8), random.uniform(0, 0.8), random.uniform(0, 0.8), 1.0])
-        colors = [list(c.get_rgb()) for c in random.sample(nuancier, k=5)]
-        return [positions, colors]
-
     def _coloriser(self, V: np.ndarray) -> np.ndarray:
         renderer = render.FractalRenderer(self.palette, self.mode_var.get())
         return renderer.render(V)
