@@ -55,39 +55,88 @@ ColorScale.red_flag_blue = ColorScale(Color(193, 18, 31),Color(0, 48, 73))
 ColorScale.fresh_meadow = ColorScale(Color(181, 228, 140),Color(22, 138, 173))
 
 
-def coloriser(V, palette):
+def rgb_to_hsv(rgb: np.ndarray) -> np.ndarray:
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    maxc = np.max(rgb, axis=-1)
+    minc = np.min(rgb, axis=-1)
+    delta = maxc - minc
+    v = maxc
+    s = np.where(maxc == 0, 0.0, delta / np.where(maxc == 0, 1.0, maxc))
+    deltac = np.where(delta == 0, 1.0, delta)
+    rc = (maxc - r) / deltac
+    gc = (maxc - g) / deltac
+    bc = (maxc - b) / deltac
+    h = np.where(maxc == r, bc - gc, 0.0)
+    h = np.where(maxc == g, 2.0 + rc - bc, h)
+    h = np.where(maxc == b, 4.0 + gc - rc, h)
+    h = np.where(delta == 0, 0.0, (h / 6.0) % 1.0)
+    return np.stack([h, s, v], axis=-1)
+
+
+def hsv_to_rgb(hsv: np.ndarray) -> np.ndarray:
+    h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    i = np.floor(h * 6.0).astype(int)
+    f = h * 6.0 - i
+    p = v * (1.0 - s)
+    q = v * (1.0 - s * f)
+    w = v * (1.0 - s * (1.0 - f))
+    i = i % 6
+    r = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5], [v, q, p, p, w, v])
+    g = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5], [w, v, v, q, p, p])
+    b = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5], [p, p, w, v, v, q])
+    rgb = np.stack([r, g, b], axis=-1)
+    gray = np.stack([v, v, v], axis=-1)
+    return np.where(s[..., None] == 0, gray, rgb)
+
+
+def coloriser_rgb(V: np.ndarray, palette: list) -> np.ndarray:
     positions = np.array(palette[0], dtype=np.float64)
     colors = np.array(palette[1], dtype=np.float64)
-
+    order = np.argsort(positions, kind="stable")
+    positions = positions[order]
+    colors = colors[order]
     V_clamped = np.clip(V, positions[0], positions[-1])
-
-    # pour chaque pixel, trouver dans quel segment il tombe
-    idx_right = np.searchsorted(positions, V_clamped, side='right')
-    idx_right = np.clip(idx_right, 1, len(positions) - 1)
+    idx_right = np.clip(np.searchsorted(positions, V_clamped, side="right"), 1, len(positions) - 1)
     idx_left = idx_right - 1
-
-    # positions des stops gauche et droit
-    lpos = positions[idx_left]
-    rpos = positions[idx_right]
-
-    # poids d'interpolation (même logique que ton lweight/rweight)
-    span = rpos - lpos
-    span[span == 0] = 1          # évite la division par zéro (pile sur un stop)
-    t = (V_clamped - lpos) / span
-
-    # couleurs aux stops gauche et droit
-    lcolor = colors[idx_left]    # (H, W, 3)
-    rcolor = colors[idx_right]   # (H, W, 3)
-
-    # interpolation
-    t = t[:, :, None]            # (H, W, 1) pour diffuser sur les 3 canaux
-    return (lcolor * (1 - t) + rcolor * t).astype(np.uint8)  
-
-# def coloriser(V, scale):
-#     c0 = np.array(scale.color_0.get_rgb())
-#     c1 = np.array(scale.color_1.get_rgb())
-#     s = V[:, :, None]                       # (H, W, 1) pour diffuser sur les 3 canaux ?
-#     return (c1 * (1 - s) + c0 * s).astype(np.uint8)       
+    span = positions[idx_right] - positions[idx_left]
+    span[span == 0] = 1
+    t = (V_clamped - positions[idx_left]) / span
+    t = t[:, :, None]
+    return (colors[idx_left] * (1 - t) + colors[idx_right] * t).astype(np.uint8)
 
 
-#if __name__== "__main__" :
+def coloriser_hsv(V: np.ndarray, palette: list) -> np.ndarray:
+    positions = np.array(palette[0], dtype=np.float64)
+    colors = np.array(palette[1], dtype=np.float64)
+    order = np.argsort(positions, kind="stable")
+    positions = positions[order]
+    colors = colors[order]
+    stops_hsv = rgb_to_hsv(colors / 255.0)
+    V_clamped = np.clip(V, positions[0], positions[-1])
+    idx_right = np.clip(np.searchsorted(positions, V_clamped, side="right"), 1, len(positions) - 1)
+    idx_left = idx_right - 1
+    span = positions[idx_right] - positions[idx_left]
+    span[span == 0] = 1
+    t = (V_clamped - positions[idx_left]) / span
+    lhsv = stops_hsv[idx_left]
+    rhsv = stops_hsv[idx_right]
+    lh, rh = lhsv[..., 0], rhsv[..., 0]
+    dh = (rh - lh + 0.5) % 1.0 - 0.5
+    h = (lh + t * dh) % 1.0
+    s = lhsv[..., 1] * (1 - t) + rhsv[..., 1] * t
+    v = lhsv[..., 2] * (1 - t) + rhsv[..., 2] * t
+    return (hsv_to_rgb(np.stack([h, s, v], axis=-1)) * 255.0).astype(np.uint8)
+
+
+class FractalRenderer:
+    def __init__(self, palette: list, mode: str = "rgb"):
+        self.palette = palette
+        self.mode = mode
+
+    def render(self, V: np.ndarray) -> np.ndarray:
+        if self.mode == "hsv":
+            return coloriser_hsv(V, self.palette)
+        return coloriser_rgb(V, self.palette)
+
+    def save(self, image: np.ndarray, path) -> None:
+        Image.fromarray(image).save(path)
