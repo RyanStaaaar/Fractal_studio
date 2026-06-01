@@ -1,27 +1,40 @@
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-import iteration
-import render
-import fractal
-import subprocess
-import datetime
+import random
 
-borne = 1
-c = complex(np.random.uniform(-borne, borne), np.random.uniform(-borne, borne))
-scale = render.Color_scale(render.Color.black, render.Color.white)
-f = iteration.Poly(1, 0, c)
+x= 0.2
 
 
-V =fractal.julia(f,height=1964, width=3024, n=100)  
-#V =fractal.mosaique_mandelbrot(size=1000, n_sub=40, n=100)  
-C = render.coloriser(V, scale)                       
-im = Image.fromarray(C)
+def left_neigbour(x,ls) :
+    index=0
+    if x<ls[0] : 
+        raise ValueError("x too smalled compared to the list")
+    for i in range(len(ls)) :
+        if x-ls[index]>=x-ls[i]>=0 :
+            index = i
+    return index
 
-font=ImageFont.truetype("/System/Library/Fonts/Supplemental/AmericanTypewriter.ttc", size = 100)
-ajd= datetime.date.today()
-draw = ImageDraw.Draw(im)
-draw.text((10,10), ajd.strftime("%-d"),font= font, anchor = "lt", fill = "black")
+def right_neigbour(x,ls) :
+    index=len(ls)-1
+    if x>ls[index] : 
+        raise ValueError("x too big compared to the list")
+    for i in range(len(ls)) :
+        if ls[index]-x>=ls[i]-x>=0 :
+            index =i
+    return index
 
-im.save("/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/Wallpapers/wallpaper_.png")
+def neighbourhood(x,ls) :
+    return (left_neigbour(x,ls), right_neigbour(x,ls))
 
-subprocess.run(["desktoppr", "/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/Wallpapers/wallpaper_.png"])
+palette=[[0, 0.8, 1], [(0,0,0), (116, 0, 184),(83, 144, 217)]]
+
+def couleur(x,palette) :
+    neighbours = neighbourhood(x,palette[0])
+    lpos = palette[0][neighbours[0]]
+    rpos = palette[0][neighbours[1]]
+    lweight = (1-(x-lpos)/(rpos-lpos))
+    rweight = (1-(rpos-x)/(rpos-lpos))
+    lcolor = palette[1][neighbours[0]]
+    rcolor = palette[1][neighbours[1]]
+    return (round(lweight*lcolor[0]+rweight*rcolor[0]),round(lweight*lcolor[1]+rweight*rcolor[1]),round(lweight*lcolor[2]+rweight*rcolor[2]))
+
+print(couleur(x,palette))
+print(random.uniform(0,1))

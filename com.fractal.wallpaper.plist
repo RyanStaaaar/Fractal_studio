@@ -10,7 +10,7 @@
         <!-- À ÉDITER : python de ton venv (avec Pillow, numpy, numba installés) -->
         <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/myenv/bin/python3.14</string>
         <!-- À ÉDITER : chemin du wrapper, DANS le dossier du dépôt -->
-        <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/test.py</string>
+        <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/wallpaper.py</string>
     </array>
 
     <!-- À ÉDITER : le dossier du dépôt, pour que les imports (fractal, render...) résolvent -->
