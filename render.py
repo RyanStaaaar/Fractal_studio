@@ -189,16 +189,33 @@ def coloriser_oklab(V: np.ndarray, palette: list) -> np.ndarray:
     return (oklab_to_srgb(lab) * 255.0).astype(np.uint8)
 
 
+# ------------------------------------------------------------------ #
+#  Coloration cyclique « limited color » : on indexe une couleur par
+#  (itérations modulo N), N = nombre de couleurs de la palette. Pas
+#  d'interpolation -> bandes nettes qui recyclent les couleurs.
+# ------------------------------------------------------------------ #
+def coloriser_cyclic(V: np.ndarray, palette: list, n_iter: int) -> np.ndarray:
+    """V est le champ classique (n-i)/n -> on récupère i = n*(1-V) et indexe colors[i % N]."""
+    colors = np.array(palette[1], dtype=np.float64)
+    N = len(colors)
+    i = np.rint(n_iter * (1.0 - V)).astype(np.int64)
+    idx = np.mod(i, N)
+    return colors[idx].astype(np.uint8)
+
+
 class FractalRenderer:
-    def __init__(self, palette: list, mode: str = "rgb"):
+    def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80):
         self.palette = palette
         self.mode = mode
+        self.n_iter = n_iter   # utilisé seulement par le mode "cyclic"
 
     def render(self, V: np.ndarray) -> np.ndarray:
         if self.mode == "hsv":
             return coloriser_hsv(V, self.palette)
         if self.mode == "oklab":
             return coloriser_oklab(V, self.palette)
+        if self.mode == "cyclic":
+            return coloriser_cyclic(V, self.palette, self.n_iter)
         return coloriser_rgb(V, self.palette)
 
     def save(self, image: np.ndarray, path) -> None:

@@ -41,6 +41,7 @@ class MainWindow:
         self.c_im = tk.DoubleVar(value=round(c0.imag, 4))
         self.mode_var = tk.StringVar(value="rgb")
         self.smooth_var = tk.BooleanVar(value=True)   # lissage logarithmique vs comptage classique
+        self.cyclic_var = tk.BooleanVar(value=False)  # bandes cycliques (couleur = itérations % N)
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -59,8 +60,16 @@ class MainWindow:
     #  Palette helpers
     # ------------------------------------------------------------------ #
     def _coloriser(self, V: np.ndarray) -> np.ndarray:
-        renderer = render.FractalRenderer(self.palette, self.mode_var.get())
+        if self.cyclic_var.get():
+            renderer = render.FractalRenderer(self.palette, "cyclic", self.N_ITER)
+        else:
+            renderer = render.FractalRenderer(self.palette, self.mode_var.get())
         return renderer.render(V)
+
+    def _on_cyclic_toggle(self):
+        # bascule cyclique : change à la fois le champ (classique) et la couleur
+        self._recompute_fractal()
+        self._update_gradient()
 
     # ------------------------------------------------------------------ #
     #  UI builders
@@ -92,6 +101,9 @@ class MainWindow:
         tk.Label(mode_frame, text="    ").pack(side="left")
         tk.Checkbutton(mode_frame, text="Lissage", variable=self.smooth_var,
                        command=self._recompute_fractal).pack(side="left")
+        # bandes cycliques : couleur indexée par (itérations % N), ignore l'interpolation
+        tk.Checkbutton(mode_frame, text="Bandes (mod N)", variable=self.cyclic_var,
+                       command=self._on_cyclic_toggle).pack(side="left")
 
     def _build_sanzo_controls(self):
         f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")
@@ -218,9 +230,13 @@ class MainWindow:
     # ------------------------------------------------------------------ #
     #  Rendu
     # ------------------------------------------------------------------ #
+    def _smooth_now(self) -> bool:
+        # le mode bandes a besoin du champ classique (comptes d'itérations entiers)
+        return False if self.cyclic_var.get() else self.smooth_var.get()
+
     def _recompute_fractal(self, *_):
         gen = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER,
-                                       smooth=self.smooth_var.get())
+                                       smooth=self._smooth_now())
         poly = iteration.Poly(1, 0, self._current_c())
         self.V_preview = gen.generate_julia(poly)
         self._redraw_fractal()
@@ -253,7 +269,7 @@ class MainWindow:
     def _compute_hd(self) -> np.ndarray:
         # calcule la fractale en pleine résolution (FULL_W x FULL_H) pour le c courant
         gen = fractal.FractalGenerator(self.FULL_H, self.FULL_W, self.N_ITER,
-                                       smooth=self.smooth_var.get())
+                                       smooth=self._smooth_now())
         poly = iteration.Poly(1, 0, self._current_c())
         V_full = gen.generate_julia(poly)
         return self._coloriser(V_full)
