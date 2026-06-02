@@ -203,19 +203,31 @@ def coloriser_cyclic(V: np.ndarray, palette: list, n_iter: int) -> np.ndarray:
     return colors[idx].astype(np.uint8)
 
 
+def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
+    """Remappe V (dans [0,1]) en onde triangulaire : le dégradé se répète n fois
+    en miroir (0->1->0->1...), sans couture. n=1 redonne le dégradé normal."""
+    u = V * n
+    return 1.0 - np.abs((u % 2.0) - 1.0)
+
+
 class FractalRenderer:
-    def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80):
+    def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1):
         self.palette = palette
         self.mode = mode
-        self.n_iter = n_iter   # utilisé seulement par le mode "cyclic"
+        self.n_iter = n_iter    # utilisé seulement par le mode "cyclic"
+        self.repeat = repeat    # > 1 : dégradé répété en miroir (cyclic gradient)
 
     def render(self, V: np.ndarray) -> np.ndarray:
+        # bandes indexées : pas d'interpolation ni de répétition de dégradé
+        if self.mode == "cyclic":
+            return coloriser_cyclic(V, self.palette, self.n_iter)
+        # dégradé : on peut le replier n fois en miroir avant l'interpolation
+        if self.repeat > 1:
+            V = mirror_repeat(V, self.repeat)
         if self.mode == "hsv":
             return coloriser_hsv(V, self.palette)
         if self.mode == "oklab":
             return coloriser_oklab(V, self.palette)
-        if self.mode == "cyclic":
-            return coloriser_cyclic(V, self.palette, self.n_iter)
         return coloriser_rgb(V, self.palette)
 
     def save(self, image: np.ndarray, path) -> None:

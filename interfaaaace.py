@@ -42,6 +42,8 @@ class MainWindow:
         self.mode_var = tk.StringVar(value="rgb")
         self.smooth_var = tk.BooleanVar(value=True)   # lissage logarithmique vs comptage classique
         self.cyclic_var = tk.BooleanVar(value=False)  # bandes cycliques (couleur = itérations % N)
+        self.mirror_var = tk.BooleanVar(value=False)  # dégradé répété en miroir n fois
+        self.mirror_n = tk.IntVar(value=3)            # nombre de répétitions du dégradé
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -59,11 +61,20 @@ class MainWindow:
     # ------------------------------------------------------------------ #
     #  Palette helpers
     # ------------------------------------------------------------------ #
+    def _mirror_repeat_count(self) -> int:
+        if not self.mirror_var.get():
+            return 1
+        try:
+            return max(1, int(self.mirror_n.get()))
+        except (tk.TclError, ValueError):
+            return 1
+
     def _coloriser(self, V: np.ndarray) -> np.ndarray:
         if self.cyclic_var.get():
             renderer = render.FractalRenderer(self.palette, "cyclic", self.N_ITER)
         else:
-            renderer = render.FractalRenderer(self.palette, self.mode_var.get())
+            renderer = render.FractalRenderer(self.palette, self.mode_var.get(),
+                                              repeat=self._mirror_repeat_count())
         return renderer.render(V)
 
     def _on_cyclic_toggle(self):
@@ -104,6 +115,13 @@ class MainWindow:
         # bandes cycliques : couleur indexée par (itérations % N), ignore l'interpolation
         tk.Checkbutton(mode_frame, text="Bandes (mod N)", variable=self.cyclic_var,
                        command=self._on_cyclic_toggle).pack(side="left")
+        # dégradé miroir : replie le dégradé n fois (recoloration seule, pas de recalcul)
+        tk.Checkbutton(mode_frame, text="Miroir ×", variable=self.mirror_var,
+                       command=self._apply_palette).pack(side="left")
+        sp = ttk.Spinbox(mode_frame, from_=1, to=20, width=3, textvariable=self.mirror_n,
+                         command=self._apply_palette)
+        sp.pack(side="left")
+        self.mirror_n.trace_add("write", lambda *_: self._apply_palette())
 
     def _build_sanzo_controls(self):
         f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")

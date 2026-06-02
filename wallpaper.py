@@ -13,7 +13,8 @@ class WallpaperApp:
     # ------------------------------------------------------------------ #
     MODE = "oklab"        # interpolation des couleurs : "rgb" | "hsv" | "oklab" | "cyclic"
     SMOOTH = True         # lissage logarithmique (ignoré si MODE == "cyclic")
-    N_ITER = 80           # nombre d'itérations
+    REPEAT = 1            # > 1 : dégradé replié en miroir n fois (ignoré si MODE == "cyclic")
+    N_ITER = 100           # nombre d'itérations
     WIDTH, HEIGHT = 3024, 1964   # résolution de l'image
     # ------------------------------------------------------------------ #
 
@@ -31,9 +32,10 @@ class WallpaperApp:
         poly = iteration.Poly(1, 0, c)
         V = gen.generate_julia(poly)
         palette = render.make_random_palette()
-        renderer = render.FractalRenderer(palette, mode=self.MODE, n_iter=self.N_ITER)
+        renderer = render.FractalRenderer(palette, mode=self.MODE, n_iter=self.N_ITER, repeat=self.REPEAT)
         image = renderer.render(V)
-        today = datetime.today().strftime("%d_%m_%Y")
+        #today = datetime.today().strftime("%d_%m_%Y")
+        today = "au"
         path = self.output_dir / f"wallpaper_{today}.png"
         renderer.save(image, path)
         print(f"image sauvegardée : {path}")
