@@ -8,6 +8,15 @@ import fractal
 
 
 class WallpaperApp:
+    # ------------------------------------------------------------------ #
+    #  RÉGLAGES — éditer ces valeurs pour changer le rendu quotidien
+    # ------------------------------------------------------------------ #
+    MODE = "oklab"        # interpolation des couleurs : "rgb" | "hsv" | "oklab" | "cyclic"
+    SMOOTH = True         # lissage logarithmique (ignoré si MODE == "cyclic")
+    N_ITER = 80           # nombre d'itérations
+    WIDTH, HEIGHT = 3024, 1964   # résolution de l'image
+    # ------------------------------------------------------------------ #
+
     _DESKTOPPR = Path("/usr/local/bin/desktoppr")
 
     def __init__(self, output_dir: Path):
@@ -15,12 +24,14 @@ class WallpaperApp:
         self.output_dir.mkdir(exist_ok=True)
 
     def generate(self) -> Path:
-        gen = fractal.FractalGenerator(height=1964, width=3024, n_iter=80)
+        # le mode bandes a besoin du champ classique (comptes d'itérations entiers)
+        smooth = False if self.MODE == "cyclic" else self.SMOOTH
+        gen = fractal.FractalGenerator(self.HEIGHT, self.WIDTH, self.N_ITER, smooth=smooth)
         c = gen.pick_interesting_c()
         poly = iteration.Poly(1, 0, c)
         V = gen.generate_julia(poly)
         palette = render.make_random_palette()
-        renderer = render.FractalRenderer(palette, mode="oklab")
+        renderer = render.FractalRenderer(palette, mode=self.MODE, n_iter=self.N_ITER)
         image = renderer.render(V)
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"
