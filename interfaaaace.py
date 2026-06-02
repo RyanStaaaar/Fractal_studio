@@ -40,6 +40,7 @@ class MainWindow:
         self.c_re = tk.DoubleVar(value=round(c0.real, 4))
         self.c_im = tk.DoubleVar(value=round(c0.imag, 4))
         self.mode_var = tk.StringVar(value="rgb")
+        self.smooth_var = tk.BooleanVar(value=True)   # lissage logarithmique vs comptage classique
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -87,6 +88,10 @@ class MainWindow:
                        command=self._apply_palette).pack(side="left")
         tk.Radiobutton(mode_frame, text="Oklab", variable=self.mode_var, value="oklab",
                        command=self._apply_palette).pack(side="left")
+        # lissage : change le champ d'itérations -> recalcul nécessaire (pas juste la couleur)
+        tk.Label(mode_frame, text="    ").pack(side="left")
+        tk.Checkbutton(mode_frame, text="Lissage", variable=self.smooth_var,
+                       command=self._recompute_fractal).pack(side="left")
 
     def _build_sanzo_controls(self):
         f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")
@@ -214,7 +219,8 @@ class MainWindow:
     #  Rendu
     # ------------------------------------------------------------------ #
     def _recompute_fractal(self, *_):
-        gen = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER)
+        gen = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER,
+                                       smooth=self.smooth_var.get())
         poly = iteration.Poly(1, 0, self._current_c())
         self.V_preview = gen.generate_julia(poly)
         self._redraw_fractal()
@@ -246,7 +252,8 @@ class MainWindow:
 
     def _compute_hd(self) -> np.ndarray:
         # calcule la fractale en pleine résolution (FULL_W x FULL_H) pour le c courant
-        gen = fractal.FractalGenerator(self.FULL_H, self.FULL_W, self.N_ITER)
+        gen = fractal.FractalGenerator(self.FULL_H, self.FULL_W, self.N_ITER,
+                                       smooth=self.smooth_var.get())
         poly = iteration.Poly(1, 0, self._current_c())
         V_full = gen.generate_julia(poly)
         return self._coloriser(V_full)
