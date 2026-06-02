@@ -85,6 +85,8 @@ class MainWindow:
                        command=self._apply_palette).pack(side="left")
         tk.Radiobutton(mode_frame, text="HSV", variable=self.mode_var, value="hsv",
                        command=self._apply_palette).pack(side="left")
+        tk.Radiobutton(mode_frame, text="Oklab", variable=self.mode_var, value="oklab",
+                       command=self._apply_palette).pack(side="left")
 
     def _build_sanzo_controls(self):
         f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")

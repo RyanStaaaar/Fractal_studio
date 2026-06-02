@@ -131,6 +131,64 @@ def coloriser_hsv(V: np.ndarray, palette: list) -> np.ndarray:
     return (hsv_to_rgb(np.stack([h, s, v], axis=-1)) * 255.0).astype(np.uint8)
 
 
+# ------------------------------------------------------------------ #
+#  Oklab (Björn Ottosson) : espace perceptuellement uniforme,
+#  donne des dégradés plus naturels que RGB ou HSV.
+# ------------------------------------------------------------------ #
+def _srgb_to_linear(c: np.ndarray) -> np.ndarray:
+    return np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92)
+
+
+def _linear_to_srgb(c: np.ndarray) -> np.ndarray:
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c > 0.0031308, 1.055 * (c ** (1 / 2.4)) - 0.055, 12.92 * c)
+
+
+def srgb_to_oklab(rgb: np.ndarray) -> np.ndarray:
+    """sRGB [0,1], shape (...,3) -> Oklab (L, a, b)."""
+    lin = _srgb_to_linear(rgb)
+    r, g, b = lin[..., 0], lin[..., 1], lin[..., 2]
+    l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
+    m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
+    s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
+    l_, m_, s_ = np.cbrt(l), np.cbrt(m), np.cbrt(s)
+    L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
+    a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
+    bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+    return np.stack([L, a, bb], axis=-1)
+
+
+def oklab_to_srgb(lab: np.ndarray) -> np.ndarray:
+    """Oklab (L, a, b) -> sRGB [0,1], shape (...,3)."""
+    L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+    l_ = L + 0.3963377774 * a + 0.2158037573 * b
+    m_ = L - 0.1055613458 * a - 0.0638541728 * b
+    s_ = L - 0.0894841775 * a - 1.2914855480 * b
+    l, m, s = l_ ** 3, m_ ** 3, s_ ** 3
+    r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+    g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+    bb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    return _linear_to_srgb(np.stack([r, g, bb], axis=-1))
+
+
+def coloriser_oklab(V: np.ndarray, palette: list) -> np.ndarray:
+    positions = np.array(palette[0], dtype=np.float64)
+    colors = np.array(palette[1], dtype=np.float64)
+    order = np.argsort(positions, kind="stable")
+    positions = positions[order]
+    colors = colors[order]
+    stops_lab = srgb_to_oklab(colors / 255.0)
+    V_clamped = np.clip(V, positions[0], positions[-1])
+    idx_right = np.clip(np.searchsorted(positions, V_clamped, side="right"), 1, len(positions) - 1)
+    idx_left = idx_right - 1
+    span = positions[idx_right] - positions[idx_left]
+    span[span == 0] = 1
+    t = (V_clamped - positions[idx_left]) / span
+    t = t[:, :, None]
+    lab = stops_lab[idx_left] * (1 - t) + stops_lab[idx_right] * t
+    return (oklab_to_srgb(lab) * 255.0).astype(np.uint8)
+
+
 class FractalRenderer:
     def __init__(self, palette: list, mode: str = "rgb"):
         self.palette = palette
@@ -139,6 +197,8 @@ class FractalRenderer:
     def render(self, V: np.ndarray) -> np.ndarray:
         if self.mode == "hsv":
             return coloriser_hsv(V, self.palette)
+        if self.mode == "oklab":
+            return coloriser_oklab(V, self.palette)
         return coloriser_rgb(V, self.palette)
 
     def save(self, image: np.ndarray, path) -> None:
