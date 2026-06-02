@@ -44,6 +44,7 @@ class MainWindow:
         self.cyclic_var = tk.BooleanVar(value=False)  # bandes cycliques (couleur = itérations % N)
         self.mirror_var = tk.BooleanVar(value=False)  # dégradé répété en miroir n fois
         self.mirror_n = tk.IntVar(value=3)            # nombre de répétitions du dégradé
+        self.ssaa = tk.IntVar(value=1)                # supersampling (anti-aliasing) : 1 = off
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -66,6 +67,12 @@ class MainWindow:
             return 1
         try:
             return max(1, int(self.mirror_n.get()))
+        except (tk.TclError, ValueError):
+            return 1
+
+    def _ssaa_factor(self) -> int:
+        try:
+            return max(1, int(self.ssaa.get()))
         except (tk.TclError, ValueError):
             return 1
 
@@ -122,6 +129,10 @@ class MainWindow:
                          command=self._apply_palette)
         sp.pack(side="left")
         self.mirror_n.trace_add("write", lambda *_: self._apply_palette())
+        # supersampling (anti-aliasing) : calcul à k× la résolution -> recalcul nécessaire
+        tk.Label(mode_frame, text="    AA×").pack(side="left")
+        ttk.Spinbox(mode_frame, from_=1, to=4, width=3, textvariable=self.ssaa,
+                    command=self._recompute_fractal).pack(side="left")
 
     def _build_sanzo_controls(self):
         f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")
@@ -253,7 +264,9 @@ class MainWindow:
         return False if self.cyclic_var.get() else self.smooth_var.get()
 
     def _recompute_fractal(self, *_):
-        gen = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER,
+        # V calculé à k× la résolution d'aperçu ; réduit au moment de l'affichage
+        k = self._ssaa_factor()
+        gen = fractal.FractalGenerator(self.PREVIEW_H * k, self.PREVIEW_W * k, self.N_ITER,
                                        smooth=self._smooth_now())
         poly = iteration.Poly(1, 0, self._current_c())
         self.V_preview = gen.generate_julia(poly)
@@ -262,7 +275,7 @@ class MainWindow:
     def _redraw_fractal(self):
         if self.V_preview is None:
             return
-        C = self._coloriser(self.V_preview)
+        C = render.downscale(self._coloriser(self.V_preview), self.PREVIEW_W, self.PREVIEW_H)
         photo = ImageTk.PhotoImage(Image.fromarray(C))
         self.fractal_canvas.itemconfig(self.fractal_item, image=photo)
         self.fractal_canvas.image = photo
@@ -285,12 +298,14 @@ class MainWindow:
         self._recompute_fractal()
 
     def _compute_hd(self) -> np.ndarray:
-        # calcule la fractale en pleine résolution (FULL_W x FULL_H) pour le c courant
-        gen = fractal.FractalGenerator(self.FULL_H, self.FULL_W, self.N_ITER,
+        # calcule la fractale en pleine résolution (FULL_W x FULL_H) pour le c courant,
+        # avec supersampling k× puis réduction moyennée (anti-aliasing)
+        k = self._ssaa_factor()
+        gen = fractal.FractalGenerator(self.FULL_H * k, self.FULL_W * k, self.N_ITER,
                                        smooth=self._smooth_now())
         poly = iteration.Poly(1, 0, self._current_c())
         V_full = gen.generate_julia(poly)
-        return self._coloriser(V_full)
+        return render.downscale(self._coloriser(V_full), self.FULL_W, self.FULL_H)
 
     def _show_hd_popup(self, *_):
         # le calcul HD prend ~1 s : curseur d'attente pendant le rendu

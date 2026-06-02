@@ -203,6 +203,14 @@ def coloriser_cyclic(V: np.ndarray, palette: list, n_iter: int) -> np.ndarray:
     return colors[idx].astype(np.uint8)
 
 
+def downscale(image: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
+    """Réduit une image RGB à (out_w, out_h) par moyennage (supersampling / SSAA).
+    Calculer à k× la résolution puis appeler ceci lisse l'aliasing et le Moiré."""
+    if image.shape[1] == out_w and image.shape[0] == out_h:
+        return image
+    return np.asarray(Image.fromarray(image).resize((out_w, out_h), Image.LANCZOS))
+
+
 def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
     """Remappe V (dans [0,1]) en onde triangulaire : le dégradé se répète n fois
     en miroir (0->1->0->1...), sans couture. n=1 redonne le dégradé normal."""
