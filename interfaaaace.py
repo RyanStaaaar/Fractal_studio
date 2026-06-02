@@ -10,6 +10,7 @@ from tkinter import ttk, simpledialog, messagebox
 import iteration
 import render
 import fractal
+from transform import parse_transform
 
 
 class MainWindow:
@@ -45,6 +46,8 @@ class MainWindow:
         self.mirror_var = tk.BooleanVar(value=False)  # dégradé répété en miroir n fois
         self.mirror_n = tk.IntVar(value=3)            # nombre de répétitions du dégradé
         self.ssaa = tk.IntVar(value=1)                # supersampling (anti-aliasing) : 1 = off
+        self.transform_var = tk.StringVar(value="z")  # transfo du plan f(z) (pullback)
+        self.transform = None                         # callable courant (None = identité)
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -54,6 +57,7 @@ class MainWindow:
         self._build_sanzo_controls()
         self._build_palette_controls()
         self._build_c_controls()
+        self._build_transform_controls()
         self._build_buttons()
 
         self._recompute_fractal()
@@ -193,6 +197,23 @@ class MainWindow:
         sc_im.bind("<ButtonRelease-1>", self._recompute_fractal)
         tk.Label(c_frame, textvariable=self.c_label_var).pack(pady=(2, 4))
 
+    def _build_transform_controls(self):
+        f = tk.LabelFrame(self.root, text="Transformation du plan  (pullback : pixel → point échantillonné)")
+        f.pack(padx=10, pady=4, fill="x")
+        row = tk.Frame(f)
+        row.pack(fill="x", padx=6, pady=4)
+        tk.Label(row, text="f(z) =").pack(side="left")
+        entry = tk.Entry(row, textvariable=self.transform_var, width=22)
+        entry.pack(side="left", padx=(4, 8))
+        entry.bind("<Return>", self._apply_transform)
+        tk.Button(row, text="Appliquer", command=self._apply_transform).pack(side="left")
+        # préréglages : remplissent le champ puis appliquent
+        presets = tk.Frame(f)
+        presets.pack(fill="x", padx=6, pady=(0, 4))
+        for expr in ("z", "i*z", "z^2", "e^z", "1/z"):
+            tk.Button(presets, text=expr, width=4,
+                      command=lambda e=expr: self._set_transform(e)).pack(side="left", padx=2)
+
     def _build_buttons(self):
         btns = tk.Frame(self.root)
         btns.pack(pady=8)
@@ -235,6 +256,23 @@ class MainWindow:
         return complex(self.c_re.get(), self.c_im.get())
 
     # ------------------------------------------------------------------ #
+    #  Transformation du plan
+    # ------------------------------------------------------------------ #
+    def _set_transform(self, expr: str):
+        self.transform_var.set(expr)
+        self._apply_transform()
+
+    def _apply_transform(self, *_):
+        expr = self.transform_var.get()
+        try:
+            # "z" / vide = identité -> on garde None (rapide, comportement par défaut)
+            self.transform = None if expr.strip() in ("", "z") else parse_transform(expr)
+        except ValueError as e:
+            messagebox.showerror("Transformation invalide", str(e))
+            return                       # garde la transfo précédente
+        self._recompute_fractal()
+
+    # ------------------------------------------------------------------ #
     #  Navigation des combinaisons Sanzo Wada
     # ------------------------------------------------------------------ #
     def _update_sanzo_label(self):
@@ -267,7 +305,7 @@ class MainWindow:
         # V calculé à k× la résolution d'aperçu ; réduit au moment de l'affichage
         k = self._ssaa_factor()
         gen = fractal.FractalGenerator(self.PREVIEW_H * k, self.PREVIEW_W * k, self.N_ITER,
-                                       smooth=self._smooth_now())
+                                       smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
         self.V_preview = gen.generate_julia(poly)
         self._redraw_fractal()
@@ -302,7 +340,7 @@ class MainWindow:
         # avec supersampling k× puis réduction moyennée (anti-aliasing)
         k = self._ssaa_factor()
         gen = fractal.FractalGenerator(self.FULL_H * k, self.FULL_W * k, self.N_ITER,
-                                       smooth=self._smooth_now())
+                                       smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
         V_full = gen.generate_julia(poly)
         return render.downscale(self._coloriser(V_full), self.FULL_W, self.FULL_H)
