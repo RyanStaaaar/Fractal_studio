@@ -1,12 +1,11 @@
 from pathlib import Path
 from datetime import datetime
 import random
-import subprocess
 
 import numpy as np
 from PIL import Image, ImageTk
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, simpledialog, messagebox
 
 import iteration
 import render
@@ -24,8 +23,9 @@ class MainWindow:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Fractale de Julia + palette")
-        self.output_dir = Path(__file__).parent / "Wallpapers"
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # exports manuels du GUI : dossier dédié, distinct des wallpapers quotidiens
+        self.export_dir = Path(__file__).parent / "Exports"
+        self.export_dir.mkdir(parents=True, exist_ok=True)
 
         self.V_preview = None
         self.barre = np.linspace(np.zeros(self.GRAD_H), np.ones(self.GRAD_H), self.PREVIEW_W).T
@@ -338,17 +338,28 @@ class MainWindow:
         canvas.image = photo   # référence gardée (sinon le GC efface l'image)
 
     def _export_hd(self):
-        C = self._compute_hd()
-        today = datetime.today().strftime("%d_%m_%Y")
-        path = self.output_dir / f"wallpaper_{today}.png"
-        Image.fromarray(C).save(path)
-        print(f"image sauvegardée : {path}")
+        # l'utilisateur choisit le nom ; enregistre dans Exports/ (sans toucher au fond d'écran)
+        default = "fractale_" + datetime.today().strftime("%d_%m_%Y")
+        name = simpledialog.askstring("Exporter en HD", "Nom du fichier :",
+                                      initialvalue=default, parent=self.root)
+        if name is None:
+            return                      # annulé
+        name = name.strip()
+        if not name:
+            return
+        if not name.lower().endswith(".png"):
+            name += ".png"
+        path = self.export_dir / Path(name).name   # .name empêche d'échapper le dossier
+
+        self.root.config(cursor="watch")
+        self.root.update()
         try:
-            result = subprocess.run(["/usr/local/bin/desktoppr", str(path)], capture_output=True, text=True)
-            print(f"desktoppr : {result.returncode} | {result.stdout} | {result.stderr}")
-            subprocess.run(["killall", "Dock"])
-        except Exception as e:
-            print(f"pose du wallpaper ignorée : {e}")
+            C = self._compute_hd()
+        finally:
+            self.root.config(cursor="")
+        Image.fromarray(C).save(path)
+        print(f"image exportée : {path}")
+        messagebox.showinfo("Export", f"Image enregistrée :\n{path}")
 
     # ------------------------------------------------------------------ #
     #  Point d'entrée
