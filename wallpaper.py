@@ -20,7 +20,7 @@ class WallpaperApp:
         poly = iteration.Poly(1, 0, c)
         V = gen.generate_julia(poly)
         palette = render.make_random_palette()
-        renderer = render.FractalRenderer(palette)
+        renderer = render.FractalRenderer(palette, mode="oklab")
         image = renderer.render(V)
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"
