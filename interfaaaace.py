@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime
+import random
 import subprocess
 
 import numpy as np
@@ -27,19 +28,25 @@ class MainWindow:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.V_preview = None
-        self.palette = render.make_random_palette()
         self.barre = np.linspace(np.zeros(self.GRAD_H), np.ones(self.GRAD_H), self.PREVIEW_W).T
         self.swatches: list[tk.Label] = []
+
+        # combinaisons de couleurs Sanzo Wada ; on démarre sur une au hasard
+        self.sanzo_palettes = render.load_sanzo_palettes()
+        self.sanzo_index = random.randrange(len(self.sanzo_palettes))
+        self.palette = render.copy_palette(self.sanzo_palettes[self.sanzo_index])
 
         c0 = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER).pick_interesting_c()
         self.c_re = tk.DoubleVar(value=round(c0.real, 4))
         self.c_im = tk.DoubleVar(value=round(c0.imag, 4))
         self.mode_var = tk.StringVar(value="rgb")
         self.c_label_var = tk.StringVar()
+        self.sanzo_label_var = tk.StringVar()
 
         self._build_fractal_canvas()
         self._build_gradient_canvas()
         self._build_mode_controls()
+        self._build_sanzo_controls()
         self._build_palette_controls()
         self._build_c_controls()
         self._build_buttons()
@@ -79,11 +86,28 @@ class MainWindow:
         tk.Radiobutton(mode_frame, text="HSV", variable=self.mode_var, value="hsv",
                        command=self._apply_palette).pack(side="left")
 
+    def _build_sanzo_controls(self):
+        f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")
+        f.pack(padx=10, pady=4, fill="x")
+        tk.Button(f, text="◀ Précédent", command=self._sanzo_prev).pack(side="left", padx=4, pady=4)
+        tk.Label(f, textvariable=self.sanzo_label_var, width=14).pack(side="left", padx=4)
+        tk.Button(f, text="Suivant ▶", command=self._sanzo_next).pack(side="left", padx=4)
+        tk.Button(f, text="Aléatoire", command=self._sanzo_random).pack(side="left", padx=4)
+        self._update_sanzo_label()
+
     def _build_palette_controls(self):
-        pal_frame = tk.LabelFrame(self.root, text="Palette")
-        pal_frame.pack(padx=10, pady=4, fill="x")
+        # cadre persistant : son contenu (les lignes) est reconstruit à chaque
+        # changement de combinaison, car le nombre de stops varie (2 à 4 couleurs)
+        self.pal_frame = tk.LabelFrame(self.root, text="Palette")
+        self.pal_frame.pack(padx=10, pady=4, fill="x")
+        self._populate_palette_rows()
+
+    def _populate_palette_rows(self):
+        for child in self.pal_frame.winfo_children():
+            child.destroy()
+        self.swatches = []
         for i in range(len(self.palette[0])):
-            row = tk.Frame(pal_frame)
+            row = tk.Frame(self.pal_frame)
             row.pack(fill="x", pady=3, padx=6)
             sw = tk.Label(row, width=3, relief="solid", bd=1, bg=self._hexcolor(self.palette[1][i]))
             sw.pack(side="left", padx=(0, 8))
@@ -161,6 +185,28 @@ class MainWindow:
 
     def _current_c(self) -> complex:
         return complex(self.c_re.get(), self.c_im.get())
+
+    # ------------------------------------------------------------------ #
+    #  Navigation des combinaisons Sanzo Wada
+    # ------------------------------------------------------------------ #
+    def _update_sanzo_label(self):
+        self.sanzo_label_var.set(f"Combo {self.sanzo_index + 1} / {len(self.sanzo_palettes)}")
+
+    def _select_sanzo(self, index: int):
+        self.sanzo_index = index % len(self.sanzo_palettes)
+        self.palette = render.copy_palette(self.sanzo_palettes[self.sanzo_index])
+        self._update_sanzo_label()
+        self._populate_palette_rows()   # le nombre de couleurs peut changer
+        self._apply_palette()
+
+    def _sanzo_prev(self):
+        self._select_sanzo(self.sanzo_index - 1)
+
+    def _sanzo_next(self):
+        self._select_sanzo(self.sanzo_index + 1)
+
+    def _sanzo_random(self):
+        self._select_sanzo(random.randrange(len(self.sanzo_palettes)))
 
     # ------------------------------------------------------------------ #
     #  Rendu

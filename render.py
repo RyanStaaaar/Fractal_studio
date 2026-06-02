@@ -1,4 +1,6 @@
 from __future__ import annotations
+from pathlib import Path
+import json
 from PIL import Image
 import numpy as np
 import random
@@ -143,16 +145,44 @@ class FractalRenderer:
         Image.fromarray(image).save(path)
 
 
+# ------------------------------------------------------------------ #
+#  Palettes « A Dictionary of Color Combinations » (Sanzo Wada)
+#  Données : github.com/mattdesl/dictionary-of-colour-combinations
+# ------------------------------------------------------------------ #
+_SANZO_PATH = Path(__file__).parent / "data" / "sanzo_colors.json"
+_sanzo_palettes_cache = None
+
+
+def copy_palette(palette: list) -> list:
+    """Copie profonde d'une palette [positions, colors] (évite de muter le cache partagé)."""
+    return [list(palette[0]), [list(c) for c in palette[1]]]
+
+
+def load_sanzo_palettes(path=_SANZO_PATH) -> list:
+    """Charge les combinaisons Sanzo Wada -> liste de palettes [positions, colors].
+
+    Le JSON est centré-couleur : chaque couleur indique les combinaisons (1-348)
+    auxquelles elle appartient. On regroupe par combinaison pour reconstruire
+    chaque palette, avec des positions de dégradé réparties uniformément sur [0, 1].
+    Le résultat est mis en cache (liste partagée — utiliser copy_palette pour muter).
+    """
+    global _sanzo_palettes_cache
+    if _sanzo_palettes_cache is None:
+        data = json.loads(Path(path).read_text())
+        combos: dict[int, list] = {}
+        for color in data:
+            for cid in color["combinations"]:
+                combos.setdefault(cid, []).append(color["rgb"])
+        palettes = []
+        for cid in sorted(combos):
+            colors = combos[cid]
+            n = len(colors)
+            positions = [i / (n - 1) for i in range(n)] if n > 1 else [0.0]
+            palettes.append([positions, [list(c) for c in colors]])
+        _sanzo_palettes_cache = palettes
+    return _sanzo_palettes_cache
+
+
 def make_random_palette() -> list:
-    """Tire une palette aléatoire : 5 positions triées + 5 couleurs (listes RGB mutables)."""
-    nuancier = [
-        Color(0, 0, 0), Color(255, 255, 255),
-        Color(116, 0, 184), Color(105, 48, 195),
-        Color(94, 96, 206), Color(83, 144, 217),
-        Color(78, 168, 222), Color(72, 191, 227),
-        Color(86, 207, 225), Color(100, 223, 223),
-        Color(114, 239, 221), Color(128, 255, 219),
-    ]
-    positions = sorted([0.0, random.uniform(0, 0.8), random.uniform(0, 0.8), random.uniform(0, 0.8), 1.0])
-    colors = [list(c.get_rgb()) for c in random.sample(nuancier, k=5)]
-    return [positions, colors]
+    """Tire une combinaison de couleurs Sanzo Wada au hasard (copie mutable)."""
+    return copy_palette(random.choice(load_sanzo_palettes()))
