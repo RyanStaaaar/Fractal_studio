@@ -211,6 +211,21 @@ def downscale(image: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
     return np.asarray(Image.fromarray(image).resize((out_w, out_h), Image.LANCZOS))
 
 
+def equalize_field(V: np.ndarray) -> np.ndarray:
+    """Égalisation d'histogramme : remappe V par sa CDF pour répartir les couleurs
+    uniformément (chaque valeur devient son rang relatif dans l'image). Les points
+    de l'ensemble (V == 0, jamais échappés) restent à 0."""
+    eq = np.zeros_like(V, dtype=np.float64)
+    mask = V > 0
+    vals = V[mask]
+    if vals.size == 0:
+        return eq
+    _, inv, counts = np.unique(vals, return_inverse=True, return_counts=True)
+    cdf = np.cumsum(counts) / vals.size          # CDF dans (0, 1], égales valeurs -> même couleur
+    eq[mask] = cdf[inv.ravel()]
+    return eq
+
+
 def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
     """Remappe V (dans [0,1]) en onde triangulaire : le dégradé se répète n fois
     en miroir (0->1->0->1...), sans couture. n=1 redonne le dégradé normal."""
@@ -219,17 +234,21 @@ def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
 
 
 class FractalRenderer:
-    def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1):
+    def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1,
+                 equalize: bool = False):
         self.palette = palette
         self.mode = mode
-        self.n_iter = n_iter    # utilisé seulement par le mode "cyclic"
-        self.repeat = repeat    # > 1 : dégradé répété en miroir (cyclic gradient)
+        self.n_iter = n_iter      # utilisé seulement par le mode "cyclic"
+        self.repeat = repeat      # > 1 : dégradé répété en miroir (cyclic gradient)
+        self.equalize = equalize  # True : égalisation d'histogramme avant l'interpolation
 
     def render(self, V: np.ndarray) -> np.ndarray:
         # bandes indexées : pas d'interpolation ni de répétition de dégradé
         if self.mode == "cyclic":
             return coloriser_cyclic(V, self.palette, self.n_iter)
-        # dégradé : on peut le replier n fois en miroir avant l'interpolation
+        # dégradé : égalisation d'histogramme puis éventuel repli miroir, avant interpolation
+        if self.equalize:
+            V = equalize_field(V)
         if self.repeat > 1:
             V = mirror_repeat(V, self.repeat)
         if self.mode == "hsv":

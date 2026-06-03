@@ -44,6 +44,7 @@ class MainWindow:
         self.mode_var = tk.StringVar(value="rgb")
         self.smooth_var = tk.BooleanVar(value=True)   # lissage logarithmique vs comptage classique
         self.cyclic_var = tk.BooleanVar(value=False)  # bandes cycliques (couleur = itérations % N)
+        self.equalize_var = tk.BooleanVar(value=False)  # égalisation d'histogramme
         self.mirror_var = tk.BooleanVar(value=False)  # dégradé répété en miroir n fois
         self.mirror_n = tk.IntVar(value=3)            # nombre de répétitions du dégradé
         self.ssaa = tk.IntVar(value=1)                # supersampling (anti-aliasing) : 1 = off
@@ -87,7 +88,8 @@ class MainWindow:
             renderer = render.FractalRenderer(self.palette, "cyclic", self.N_ITER)
         else:
             renderer = render.FractalRenderer(self.palette, self.mode_var.get(),
-                                              repeat=self._mirror_repeat_count())
+                                              repeat=self._mirror_repeat_count(),
+                                              equalize=self.equalize_var.get())
         return renderer.render(V)
 
     def _on_cyclic_toggle(self):
@@ -189,6 +191,9 @@ class MainWindow:
         # bandes cycliques : couleur indexée par (itérations % N), ignore l'interpolation
         tk.Checkbutton(mode_frame, text="Bandes (mod N)", variable=self.cyclic_var,
                        command=self._on_cyclic_toggle).pack(side="left")
+        # égalisation d'histogramme : recoloration seule (remappe le champ par sa CDF)
+        tk.Checkbutton(mode_frame, text="Histogramme", variable=self.equalize_var,
+                       command=self._apply_palette).pack(side="left")
         # dégradé miroir : replie le dégradé n fois (recoloration seule, pas de recalcul)
         tk.Checkbutton(mode_frame, text="Miroir ×", variable=self.mirror_var,
                        command=self._apply_palette).pack(side="left")
