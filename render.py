@@ -248,39 +248,62 @@ def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
     return 1.0 - np.abs((u % 2.0) - 1.0)
 
 
-def shade_lambert(height: np.ndarray, color: np.ndarray, azimuth: float = 135.0,
-                  elevation: float = 45.0, depth: float = 2.0, ambient: float = 0.3) -> np.ndarray:
-    """Éclairage lambertien : traite `height` (le champ lissé) comme une carte de
-    hauteur, en déduit une normale (gradient) et module `color` (RGB) par l'intensité
-    diffuse d'une lumière directionnelle. azimut/élévation en degrés, depth = force du
-    relief, ambient = lumière de base."""
+def shade(height: np.ndarray, color: np.ndarray, azimuth: float = 135.0,
+          elevation: float = 45.0, depth: float = 2.0, warmth: float = 0.5,
+          shadow_floor: float = 0.4) -> np.ndarray:
+    """Ombrage pictural (température de couleur), pas un simple assombrissement.
+
+    La lumière de Lambert (normale tirée du gradient de `height`) pilote une rampe
+    ombre→demi-teinte→lumière interpolée en **Oklab** (perceptuel, pas de demi-teinte
+    boueuse). Les ombres ne virent pas au noir : luminosité plancher coloré +
+    décalage de teinte vers le **froid** (bleu) ; les lumières décalent vers le
+    **chaud** (orange). `color` = image RGB déjà colorée ; `height` = champ lissé.
+
+    - azimuth/elevation : direction de la lumière (degrés)
+    - depth : force du relief
+    - warmth : amplitude du décalage chaud/froid
+    - shadow_floor : luminosité minimale des ombres (plancher coloré, 0 = quasi noir)
+    """
     az, el = np.radians(azimuth), np.radians(elevation)
     lx, ly, lz = np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)
     gy, gx = np.gradient(height.astype(np.float64))
     nx, ny, nz = -depth * gx, -depth * gy, np.ones_like(gx)
-    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)        # normalise la normale
-    diffuse = np.clip((nx * lx + ny * ly + nz * lz) * inv, 0.0, 1.0)
-    intensity = ambient + (1.0 - ambient) * diffuse
-    shaded = color.astype(np.float64) * intensity[..., None]
-    return np.clip(shaded, 0, 255).astype(np.uint8)
+    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
+    d = np.clip((nx * lx + ny * ly + nz * lz) * inv, 0.0, 1.0)   # facteur diffus [0,1]
+
+    # tout le mélange se fait en Oklab pour des transitions perceptuellement lisses
+    L0, a0, b0 = (lambda lab: (lab[..., 0], lab[..., 1], lab[..., 2]))(
+        srgb_to_oklab(color.astype(np.float64) / 255.0))
+
+    light_gain = 1.15
+    factor = shadow_floor + (light_gain - shadow_floor) * d      # plancher coloré, jamais 0
+    L1 = np.clip(L0 * factor, 0.0, 1.0)
+
+    temp = d * 2.0 - 1.0                                         # -1 ombre .. +1 lumière
+    a1 = a0 + warmth * temp * 0.03                               # +a léger (rouge) en lumière
+    b1 = b0 + warmth * temp * 0.10                               # +b chaud (jaune) / -b froid (bleu)
+
+    rgb = oklab_to_srgb(np.stack([L1, a1, b1], axis=-1)) * 255.0
+    return np.clip(rgb, 0, 255).astype(np.uint8)
 
 
 class FractalRenderer:
     def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1,
                  equalize: bool = False, clip_limit: float = 3.0,
                  light: bool = False, azimuth: float = 135.0, elevation: float = 45.0,
-                 depth: float = 2.0, ambient: float = 0.3):
+                 depth: float = 2.0, warmth: float = 0.5, shadow_floor: float = 0.4):
         self.palette = palette
         self.mode = mode
         self.n_iter = n_iter        # utilisé seulement par le mode "cyclic"
         self.repeat = repeat        # > 1 : dégradé répété en miroir (cyclic gradient)
         self.equalize = equalize    # True : égalisation d'histogramme avant l'interpolation
         self.clip_limit = clip_limit  # limite de contraste de l'égalisation (0 = pure)
-        self.light = light          # True : éclairage lambertien (relief)
+        self.light = light          # True : ombrage pictural (relief)
         self.azimuth = azimuth
         self.elevation = elevation
         self.depth = depth
-        self.ambient = ambient
+        self.warmth = warmth          # amplitude du décalage chaud/froid
+        self.shadow_floor = shadow_floor  # plancher de luminosité des ombres
 
     def render(self, V: np.ndarray) -> np.ndarray:
         # V (champ lissé brut) sert de carte de hauteur pour l'éclairage ; Vc sert à colorer
@@ -299,7 +322,8 @@ class FractalRenderer:
             else:
                 img = coloriser_rgb(Vc, self.palette)
         if self.light:
-            img = shade_lambert(V, img, self.azimuth, self.elevation, self.depth, self.ambient)
+            img = shade(V, img, self.azimuth, self.elevation, self.depth,
+                        self.warmth, self.shadow_floor)
         return img
 
     def save(self, image: np.ndarray, path) -> None:

@@ -24,7 +24,8 @@ class WallpaperApp:
     AZIMUTH = 135.0      # direction de la lumière (degrés)
     ELEVATION = 45.0     # hauteur de la lumière (degrés)
     DEPTH = 2.0          # force du relief
-    AMBIENT = 0.3        # lumière ambiante (base)
+    WARMTH = 0.5         # décalage chaud (lumière) / froid (ombre) de l'ombrage pictural
+    SHADOW_FLOOR = 0.4   # plancher de luminosité des ombres (plancher coloré, 0 = quasi noir)
     N_ITER = 100           # nombre d'itérations
     WIDTH, HEIGHT = 3024, 1964   # résolution de l'image
     # ------------------------------------------------------------------ #
@@ -51,7 +52,7 @@ class WallpaperApp:
                                           clip_limit=self.CLIP_LIMIT,
                                           light=self.LIGHT, azimuth=self.AZIMUTH,
                                           elevation=self.ELEVATION, depth=self.DEPTH,
-                                          ambient=self.AMBIENT)
+                                          warmth=self.WARMTH, shadow_floor=self.SHADOW_FLOOR)
         image = render.downscale(renderer.render(V), self.WIDTH, self.HEIGHT)
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"

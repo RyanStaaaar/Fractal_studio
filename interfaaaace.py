@@ -55,7 +55,8 @@ class MainWindow:
         self.azimuth = tk.DoubleVar(value=135.0)
         self.elevation = tk.DoubleVar(value=45.0)
         self.depth = tk.DoubleVar(value=2.0)
-        self.ambient = tk.DoubleVar(value=0.3)
+        self.warmth = tk.DoubleVar(value=0.5)         # décalage chaud/froid de l'ombrage
+        self.shadow_floor = tk.DoubleVar(value=0.4)   # plancher de luminosité des ombres
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -105,7 +106,8 @@ class MainWindow:
             clip_limit=self._clip_limit_value(),
             light=self.light_var.get(),
             azimuth=self.azimuth.get(), elevation=self.elevation.get(),
-            depth=self.depth.get(), ambient=self.ambient.get())
+            depth=self.depth.get(), warmth=self.warmth.get(),
+            shadow_floor=self.shadow_floor.get())
         return renderer.render(V)
 
     def _on_cyclic_toggle(self):
@@ -311,7 +313,8 @@ class MainWindow:
         for label, var, lo, hi, res in (("Azimut", self.azimuth, 0, 360, 1),
                                         ("Élévation", self.elevation, 0, 90, 1),
                                         ("Profondeur", self.depth, 0, 10, 0.1),
-                                        ("Ambiant", self.ambient, 0, 1, 0.05)):
+                                        ("Chaleur", self.warmth, 0, 1, 0.05),
+                                        ("Plancher", self.shadow_floor, 0, 1, 0.05)):
             row = tk.Frame(f)
             row.pack(fill="x", padx=6, pady=1)
             tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
