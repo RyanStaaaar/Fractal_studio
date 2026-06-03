@@ -275,8 +275,9 @@ def shade(height: np.ndarray, color: np.ndarray, azimuth: float = 135.0,
     L0, a0, b0 = (lambda lab: (lab[..., 0], lab[..., 1], lab[..., 2]))(
         srgb_to_oklab(color.astype(np.float64) / 255.0))
 
-    light_gain = 1.15
+    light_gain = 1.0                                            # 1.0 -> neutre atteignable
     factor = shadow_floor + (light_gain - shadow_floor) * d      # plancher coloré, jamais 0
+    # neutre exact : shadow_floor=1 & warmth=0 -> facteur≡1 et aucun virage de teinte
     L1 = np.clip(L0 * factor, 0.0, 1.0)
 
     temp = d * 2.0 - 1.0                                         # -1 ombre .. +1 lumière
