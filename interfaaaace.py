@@ -54,7 +54,6 @@ class MainWindow:
 
         self._build_scroll_container()
         self._build_top_row()
-        self._build_gradient_canvas()
         self._build_mode_controls()
         self._build_sanzo_controls()
         self._build_palette_controls()
@@ -131,16 +130,19 @@ class MainWindow:
         self.root.geometry(f"{w}x{h}")
 
     def _build_top_row(self):
-        # carte de Mandelbrot (gauche) + aperçu Julia (droite), côte à côte
+        # Mandelbrot (gauche) | colonne droite [ Julia + barre de gradient dessous ]
         self.top_frame = tk.Frame(self.content)
         self.top_frame.pack(padx=10, pady=(10, 4))
-        self._build_mandelbrot_canvas()
+        self._build_mandelbrot_canvas()                    # gauche
+        self.right_col = tk.Frame(self.top_frame)          # droite : Julia au-dessus du gradient
+        self.right_col.pack(side="left", anchor="n")
         self._build_fractal_canvas()
+        self._build_gradient_canvas()
 
     def _build_mandelbrot_canvas(self):
         self.mandel_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H,
                                        cursor="cross")
-        self.mandel_canvas.pack(side="left", padx=(0, 8))
+        self.mandel_canvas.pack(side="left", padx=(0, 8), anchor="n")
         self.mandel_item = self.mandel_canvas.create_image(0, 0, anchor="nw")
         self._render_mandelbrot_base()
         # point rouge indiquant la position du c de la Julia courante
@@ -157,16 +159,17 @@ class MainWindow:
         self.mandel_canvas.itemconfig(self.mandel_item, image=self.mandel_photo)
 
     def _build_fractal_canvas(self):
-        self.fractal_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H,
+        self.fractal_canvas = tk.Canvas(self.right_col, width=self.PREVIEW_W, height=self.PREVIEW_H,
                                         cursor="hand2")
-        self.fractal_canvas.pack(side="left")
+        self.fractal_canvas.pack()
         self.fractal_item = self.fractal_canvas.create_image(0, 0, anchor="nw")
         # clic sur l'aperçu -> ouvre la fractale en pleine résolution HD
         self.fractal_canvas.bind("<Button-1>", self._show_hd_popup)
 
     def _build_gradient_canvas(self):
-        self.grad_canvas = tk.Canvas(self.content, width=self.PREVIEW_W, height=self.GRAD_H)
-        self.grad_canvas.pack(padx=10, pady=(0, 10))
+        # pile sous la Julia (même colonne, même largeur)
+        self.grad_canvas = tk.Canvas(self.right_col, width=self.PREVIEW_W, height=self.GRAD_H)
+        self.grad_canvas.pack(pady=(4, 0))
         self.grad_item = self.grad_canvas.create_image(0, 0, anchor="nw")
 
     def _build_mode_controls(self):
