@@ -22,7 +22,7 @@ C = complex(-0.4, 0.6)        # paramètre c de la Julia (structure à comparer)
 PALETTE_INDEX = 200           # combinaison Sanzo Wada (0..347)
 MODE = "oklab"                # interpolation des couleurs
 N_ITER = 200
-SHADOW_FLOOR = 0.5            # fixe ici ; baisse-le pour des ombres plus profondes
+SHADOW_FLOORS = [0.2, 0.35, 0.5, 0.65, 0.8]  # une planche générée par valeur
 AZIMUTH, ELEVATION = 135, 45  # direction de la lumière
 DEPTHS = [1, 2, 4, 6]         # lignes : relief de + en + prononcé
 WARMTHS = [0.0, 0.3, 0.6, 1.0]  # colonnes : distorsion de teinte croissante
@@ -52,21 +52,14 @@ def _tile(arr: np.ndarray, caption: str) -> Image.Image:
     return canvas
 
 
-def main():
-    gen = fractal.FractalGenerator(TILE_H, TILE_W, N_ITER, smooth=True)
-    V = gen.generate_julia(iteration.Poly(1, 0, C))        # champ calculé une seule fois
-    palette = render.load_sanzo_palettes()[PALETTE_INDEX % 348]
-
-    ref = render.FractalRenderer(palette, MODE).render(V)   # référence, sans relief
-    ref_tile = _tile(ref, "SANS RELIEF (référence)")
-
+def _build_sheet(V, palette, ref_tile, shadow_floor):
     grid = []
     for d in DEPTHS:
         row = []
         for w in WARMTHS:
             arr = render.FractalRenderer(palette, MODE, light=True, azimuth=AZIMUTH,
                                          elevation=ELEVATION, depth=d, warmth=w,
-                                         shadow_floor=SHADOW_FLOOR).render(V)
+                                         shadow_floor=shadow_floor).render(V)
             row.append(_tile(arr, f"depth={d}   warmth={w}"))
         grid.append(row)
 
@@ -78,7 +71,7 @@ def main():
     sheet = Image.new("RGB", (width, height), (15, 15, 15))
 
     hdr = (f"Relief — c={C.real:+.3f}{C.imag:+.3f}i, palette #{PALETTE_INDEX}, "
-           f"shadow_floor={SHADOW_FLOOR}, lumière az={AZIMUTH}° el={ELEVATION}°   |   "
+           f"SHADOW_FLOOR={shadow_floor}, lumière az={AZIMUTH}° el={ELEVATION}°   |   "
            f"colonnes = warmth (distorsion couleur), lignes = depth (relief)")
     ImageDraw.Draw(sheet).text((PAD, 12), hdr, fill=(255, 235, 150), font=FONT_HDR)
 
@@ -90,12 +83,22 @@ def main():
             sheet.paste(tile, (x, y))
             x += TILE_W + PAD
         y += tile_full_h + PAD
+    return sheet
+
+
+def main():
+    gen = fractal.FractalGenerator(TILE_H, TILE_W, N_ITER, smooth=True)
+    V = gen.generate_julia(iteration.Poly(1, 0, C))        # champ calculé une seule fois
+    palette = render.load_sanzo_palettes()[PALETTE_INDEX % 348]
+    ref_tile = _tile(render.FractalRenderer(palette, MODE).render(V), "SANS RELIEF (référence)")
 
     out = Path(__file__).parent / "Exports"
     out.mkdir(exist_ok=True)
-    path = out / "relief_compare.png"
-    sheet.save(path)
-    print(f"planche enregistrée : {path}  ({width}x{height})")
+    for sf in SHADOW_FLOORS:                                # une planche par shadow_floor
+        sheet = _build_sheet(V, palette, ref_tile, sf)
+        path = out / f"relief_compare_sf{sf}.png"
+        sheet.save(path)
+        print(f"planche enregistrée : {path}  ({sheet.width}x{sheet.height})")
 
 
 if __name__ == "__main__":
