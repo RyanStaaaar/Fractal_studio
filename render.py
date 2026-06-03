@@ -264,6 +264,11 @@ def shade(height: np.ndarray, color: np.ndarray, azimuth: float = 135.0,
     - warmth : amplitude du décalage chaud/froid
     - shadow_floor : luminosité minimale des ombres (plancher coloré, 0 = quasi noir)
     """
+    # neutre : aucun assombrissement ni virage -> on renvoie l'image telle quelle
+    # (évite l'aller-retour Oklab qui décalerait chaque pixel de ~1/255)
+    if warmth == 0.0 and shadow_floor >= 1.0:
+        return color
+
     az, el = np.radians(azimuth), np.radians(elevation)
     lx, ly, lz = np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)
     gy, gx = np.gradient(height.astype(np.float64))
