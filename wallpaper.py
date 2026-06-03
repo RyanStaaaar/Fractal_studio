@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import datetime
 import subprocess
+import random
 
 import iteration
 import render
@@ -14,11 +15,16 @@ class WallpaperApp:
     # ------------------------------------------------------------------ #
     MODE = "oklab"        # interpolation des couleurs : "rgb" | "hsv" | "oklab" | "cyclic"
     SMOOTH = True         # lissage logarithmique (ignoré si MODE == "cyclic")
-    REPEAT = 1            # > 1 : dégradé replié en miroir n fois (ignoré si MODE == "cyclic")
-    EQUALIZE = False      # True : égalisation d'histogramme (répartit les couleurs uniformément)
-    CLIP_LIMIT = 3.0      # limite de contraste de l'égalisation (bas = + de détail, haut = égalisation pure)
+    REPEAT = random.randint(1,3)      # > 1 : dégradé replié en miroir n fois (ignoré si MODE == "cyclic")
+    EQUALIZE = True      # True : égalisation d'histogramme (répartit les couleurs uniformément)
+    CLIP_LIMIT = 5.5      # limite de contraste de l'égalisation (bas = + de détail, haut = égalisation pure)
     SSAA = 2             # supersampling anti-aliasing : 1 = off, 2 = calcul ×2 puis réduit
     TRANSFORM = "z"      # transformation du plan f(z) (pullback) : "z" = aucune ; ex "i*z", "z^2", "e^z"
+    LIGHT = False        # True : relief par éclairage lambertien
+    AZIMUTH = 135.0      # direction de la lumière (degrés)
+    ELEVATION = 45.0     # hauteur de la lumière (degrés)
+    DEPTH = 2.0          # force du relief
+    AMBIENT = 0.3        # lumière ambiante (base)
     N_ITER = 100           # nombre d'itérations
     WIDTH, HEIGHT = 3024, 1964   # résolution de l'image
     # ------------------------------------------------------------------ #
@@ -42,7 +48,10 @@ class WallpaperApp:
         palette = render.make_random_palette()
         renderer = render.FractalRenderer(palette, mode=self.MODE, n_iter=self.N_ITER,
                                           repeat=self.REPEAT, equalize=self.EQUALIZE,
-                                          clip_limit=self.CLIP_LIMIT)
+                                          clip_limit=self.CLIP_LIMIT,
+                                          light=self.LIGHT, azimuth=self.AZIMUTH,
+                                          elevation=self.ELEVATION, depth=self.DEPTH,
+                                          ambient=self.AMBIENT)
         image = render.downscale(renderer.render(V), self.WIDTH, self.HEIGHT)
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"

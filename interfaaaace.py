@@ -51,6 +51,11 @@ class MainWindow:
         self.ssaa = tk.IntVar(value=1)                # supersampling (anti-aliasing) : 1 = off
         self.transform_var = tk.StringVar(value="z")  # transfo du plan f(z) (pullback)
         self.transform = None                         # callable courant (None = identité)
+        self.light_var = tk.BooleanVar(value=False)   # relief / éclairage lambertien
+        self.azimuth = tk.DoubleVar(value=135.0)
+        self.elevation = tk.DoubleVar(value=45.0)
+        self.depth = tk.DoubleVar(value=2.0)
+        self.ambient = tk.DoubleVar(value=0.3)
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -61,6 +66,7 @@ class MainWindow:
         self._build_palette_controls()
         self._build_c_controls()
         self._build_transform_controls()
+        self._build_light_controls()
         self._build_buttons()
         self._fit_window()
 
@@ -91,13 +97,15 @@ class MainWindow:
             return 3.0
 
     def _coloriser(self, V: np.ndarray) -> np.ndarray:
-        if self.cyclic_var.get():
-            renderer = render.FractalRenderer(self.palette, "cyclic", self.N_ITER)
-        else:
-            renderer = render.FractalRenderer(self.palette, self.mode_var.get(),
-                                              repeat=self._mirror_repeat_count(),
-                                              equalize=self.equalize_var.get(),
-                                              clip_limit=self._clip_limit_value())
+        mode = "cyclic" if self.cyclic_var.get() else self.mode_var.get()
+        renderer = render.FractalRenderer(
+            self.palette, mode, self.N_ITER,
+            repeat=self._mirror_repeat_count(),
+            equalize=self.equalize_var.get(),
+            clip_limit=self._clip_limit_value(),
+            light=self.light_var.get(),
+            azimuth=self.azimuth.get(), elevation=self.elevation.get(),
+            depth=self.depth.get(), ambient=self.ambient.get())
         return renderer.render(V)
 
     def _on_cyclic_toggle(self):
@@ -294,6 +302,22 @@ class MainWindow:
         for expr in ("z", "i*z", "z^2", "e^z", "1/z"):
             tk.Button(presets, text=expr, width=4,
                       command=lambda e=expr: self._set_transform(e)).pack(side="left", padx=2)
+
+    def _build_light_controls(self):
+        f = tk.LabelFrame(self.content, text="Relief (éclairage Lambert)")
+        f.pack(padx=10, pady=4, fill="x")
+        tk.Checkbutton(f, text="Activer", variable=self.light_var,
+                       command=self._apply_palette).pack(anchor="w", padx=6, pady=(2, 0))
+        for label, var, lo, hi, res in (("Azimut", self.azimuth, 0, 360, 1),
+                                        ("Élévation", self.elevation, 0, 90, 1),
+                                        ("Profondeur", self.depth, 0, 10, 0.1),
+                                        ("Ambiant", self.ambient, 0, 1, 0.05)):
+            row = tk.Frame(f)
+            row.pack(fill="x", padx=6, pady=1)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            tk.Scale(row, from_=lo, to=hi, resolution=res, orient="horizontal", length=260,
+                     variable=var, command=lambda *_: self._apply_palette()).pack(side="left",
+                                                                                  fill="x", expand=True)
 
     def _build_buttons(self):
         btns = tk.Frame(self.content)

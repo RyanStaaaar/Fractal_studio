@@ -248,30 +248,59 @@ def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
     return 1.0 - np.abs((u % 2.0) - 1.0)
 
 
+def shade_lambert(height: np.ndarray, color: np.ndarray, azimuth: float = 135.0,
+                  elevation: float = 45.0, depth: float = 2.0, ambient: float = 0.3) -> np.ndarray:
+    """Éclairage lambertien : traite `height` (le champ lissé) comme une carte de
+    hauteur, en déduit une normale (gradient) et module `color` (RGB) par l'intensité
+    diffuse d'une lumière directionnelle. azimut/élévation en degrés, depth = force du
+    relief, ambient = lumière de base."""
+    az, el = np.radians(azimuth), np.radians(elevation)
+    lx, ly, lz = np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)
+    gy, gx = np.gradient(height.astype(np.float64))
+    nx, ny, nz = -depth * gx, -depth * gy, np.ones_like(gx)
+    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)        # normalise la normale
+    diffuse = np.clip((nx * lx + ny * ly + nz * lz) * inv, 0.0, 1.0)
+    intensity = ambient + (1.0 - ambient) * diffuse
+    shaded = color.astype(np.float64) * intensity[..., None]
+    return np.clip(shaded, 0, 255).astype(np.uint8)
+
+
 class FractalRenderer:
     def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1,
-                 equalize: bool = False, clip_limit: float = 3.0):
+                 equalize: bool = False, clip_limit: float = 3.0,
+                 light: bool = False, azimuth: float = 135.0, elevation: float = 45.0,
+                 depth: float = 2.0, ambient: float = 0.3):
         self.palette = palette
         self.mode = mode
         self.n_iter = n_iter        # utilisé seulement par le mode "cyclic"
         self.repeat = repeat        # > 1 : dégradé répété en miroir (cyclic gradient)
         self.equalize = equalize    # True : égalisation d'histogramme avant l'interpolation
         self.clip_limit = clip_limit  # limite de contraste de l'égalisation (0 = pure)
+        self.light = light          # True : éclairage lambertien (relief)
+        self.azimuth = azimuth
+        self.elevation = elevation
+        self.depth = depth
+        self.ambient = ambient
 
     def render(self, V: np.ndarray) -> np.ndarray:
-        # bandes indexées : pas d'interpolation ni de répétition de dégradé
+        # V (champ lissé brut) sert de carte de hauteur pour l'éclairage ; Vc sert à colorer
         if self.mode == "cyclic":
-            return coloriser_cyclic(V, self.palette, self.n_iter)
-        # dégradé : égalisation d'histogramme puis éventuel repli miroir, avant interpolation
-        if self.equalize:
-            V = equalize_field(V, self.clip_limit)
-        if self.repeat > 1:
-            V = mirror_repeat(V, self.repeat)
-        if self.mode == "hsv":
-            return coloriser_hsv(V, self.palette)
-        if self.mode == "oklab":
-            return coloriser_oklab(V, self.palette)
-        return coloriser_rgb(V, self.palette)
+            img = coloriser_cyclic(V, self.palette, self.n_iter)
+        else:
+            Vc = V
+            if self.equalize:
+                Vc = equalize_field(Vc, self.clip_limit)
+            if self.repeat > 1:
+                Vc = mirror_repeat(Vc, self.repeat)
+            if self.mode == "hsv":
+                img = coloriser_hsv(Vc, self.palette)
+            elif self.mode == "oklab":
+                img = coloriser_oklab(Vc, self.palette)
+            else:
+                img = coloriser_rgb(Vc, self.palette)
+        if self.light:
+            img = shade_lambert(V, img, self.azimuth, self.elevation, self.depth, self.ambient)
+        return img
 
     def save(self, image: np.ndarray, path) -> None:
         Image.fromarray(image).save(path)
