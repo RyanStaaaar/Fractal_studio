@@ -20,6 +20,7 @@ class MainWindow:
     N_ITER = 80
     BORNE = 2
     GRAD_H = 28
+    _MANDEL_PALETTE = [[0.0, 1.0], [[0, 0, 0], [255, 255, 255]]]  # carte de Mandelbrot N&B
 
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -51,7 +52,7 @@ class MainWindow:
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
-        self._build_fractal_canvas()
+        self._build_top_row()
         self._build_gradient_canvas()
         self._build_mode_controls()
         self._build_sanzo_controls()
@@ -96,10 +97,33 @@ class MainWindow:
     # ------------------------------------------------------------------ #
     #  UI builders
     # ------------------------------------------------------------------ #
+    def _build_top_row(self):
+        # carte de Mandelbrot (gauche) + aperçu Julia (droite), côte à côte
+        self.top_frame = tk.Frame(self.root)
+        self.top_frame.pack(padx=10, pady=(10, 4))
+        self._build_mandelbrot_canvas()
+        self._build_fractal_canvas()
+
+    def _build_mandelbrot_canvas(self):
+        self.mandel_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H)
+        self.mandel_canvas.pack(side="left", padx=(0, 8))
+        self.mandel_item = self.mandel_canvas.create_image(0, 0, anchor="nw")
+        self._render_mandelbrot_base()
+        # point rouge indiquant la position du c de la Julia courante
+        self.mandel_dot = self.mandel_canvas.create_oval(0, 0, 0, 0, outline="red", fill="red")
+
+    def _render_mandelbrot_base(self):
+        # carte de référence du plan des c : calculée une seule fois (le set ne change pas)
+        gen = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER)
+        V = gen.generate_mandelbrot()
+        C = render.FractalRenderer(self._MANDEL_PALETTE).render(V)
+        self.mandel_photo = ImageTk.PhotoImage(Image.fromarray(C))
+        self.mandel_canvas.itemconfig(self.mandel_item, image=self.mandel_photo)
+
     def _build_fractal_canvas(self):
-        self.fractal_canvas = tk.Canvas(self.root, width=self.PREVIEW_W, height=self.PREVIEW_H,
+        self.fractal_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H,
                                         cursor="hand2")
-        self.fractal_canvas.pack(padx=10, pady=(10, 4))
+        self.fractal_canvas.pack(side="left")
         self.fractal_item = self.fractal_canvas.create_image(0, 0, anchor="nw")
         # clic sur l'aperçu -> ouvre la fractale en pleine résolution HD
         self.fractal_canvas.bind("<Button-1>", self._show_hd_popup)
@@ -251,6 +275,21 @@ class MainWindow:
     def _update_c_label(self, *_):
         signe = "+" if self.c_im.get() >= 0 else "-"
         self.c_label_var.set(f"c = {self.c_re.get():.3f} {signe} {abs(self.c_im.get()):.3f} i")
+        if hasattr(self, "mandel_dot"):     # suit c en direct sur la carte de Mandelbrot
+            self._update_mandel_dot()
+
+    def _c_to_pixel(self, c: complex):
+        # même cadrage que generate_mandelbrot : borne=BORNE, borne_y = BORNE*H/W
+        borne = self.BORNE
+        borne_y = borne * self.PREVIEW_H / self.PREVIEW_W
+        px = (c.real + borne) / (2 * borne) * (self.PREVIEW_W - 1)
+        py = (c.imag + borne_y) / (2 * borne_y) * (self.PREVIEW_H - 1)
+        return px, py
+
+    def _update_mandel_dot(self):
+        px, py = self._c_to_pixel(self._current_c())
+        r = 4
+        self.mandel_canvas.coords(self.mandel_dot, px - r, py - r, px + r, py + r)
 
     def _current_c(self) -> complex:
         return complex(self.c_re.get(), self.c_im.get())
