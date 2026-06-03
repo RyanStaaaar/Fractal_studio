@@ -52,6 +52,7 @@ class MainWindow:
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
+        self._build_scroll_container()
         self._build_top_row()
         self._build_gradient_canvas()
         self._build_mode_controls()
@@ -60,6 +61,7 @@ class MainWindow:
         self._build_c_controls()
         self._build_transform_controls()
         self._build_buttons()
+        self._fit_window()
 
         self._recompute_fractal()
         self._update_gradient()
@@ -97,20 +99,54 @@ class MainWindow:
     # ------------------------------------------------------------------ #
     #  UI builders
     # ------------------------------------------------------------------ #
+    def _build_scroll_container(self):
+        # tout le contenu va dans un Frame scrollable verticalement (self.content)
+        self.scroll_canvas = tk.Canvas(self.root, borderwidth=0, highlightthickness=0)
+        vbar = tk.Scrollbar(self.root, orient="vertical", command=self.scroll_canvas.yview)
+        self.scroll_canvas.configure(yscrollcommand=vbar.set)
+        vbar.pack(side="right", fill="y")
+        self.scroll_canvas.pack(side="left", fill="both", expand=True)
+        self.content = tk.Frame(self.scroll_canvas)
+        self.scroll_canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self.content.bind(
+            "<Configure>",
+            lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")),
+        )
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):   # mac/windows + linux
+            self.scroll_canvas.bind_all(seq, self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        if event.num == 4:
+            self.scroll_canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self.scroll_canvas.yview_scroll(1, "units")
+        else:
+            self.scroll_canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+    def _fit_window(self):
+        # largeur = contenu ; hauteur plafonnée à l'écran -> le reste se scrolle
+        self.content.update_idletasks()
+        w = self.content.winfo_reqwidth() + 24      # + barre de défilement
+        h = min(self.content.winfo_reqheight(), self.root.winfo_screenheight() - 120)
+        self.root.geometry(f"{w}x{h}")
+
     def _build_top_row(self):
         # carte de Mandelbrot (gauche) + aperçu Julia (droite), côte à côte
-        self.top_frame = tk.Frame(self.root)
+        self.top_frame = tk.Frame(self.content)
         self.top_frame.pack(padx=10, pady=(10, 4))
         self._build_mandelbrot_canvas()
         self._build_fractal_canvas()
 
     def _build_mandelbrot_canvas(self):
-        self.mandel_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H)
+        self.mandel_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H,
+                                       cursor="cross")
         self.mandel_canvas.pack(side="left", padx=(0, 8))
         self.mandel_item = self.mandel_canvas.create_image(0, 0, anchor="nw")
         self._render_mandelbrot_base()
         # point rouge indiquant la position du c de la Julia courante
         self.mandel_dot = self.mandel_canvas.create_oval(0, 0, 0, 0, outline="red", fill="red")
+        # clic sur la carte -> choisit c et recalcule la Julia
+        self.mandel_canvas.bind("<Button-1>", self._on_mandel_click)
 
     def _render_mandelbrot_base(self):
         # carte de référence du plan des c : calculée une seule fois (le set ne change pas)
@@ -129,12 +165,12 @@ class MainWindow:
         self.fractal_canvas.bind("<Button-1>", self._show_hd_popup)
 
     def _build_gradient_canvas(self):
-        self.grad_canvas = tk.Canvas(self.root, width=self.PREVIEW_W, height=self.GRAD_H)
+        self.grad_canvas = tk.Canvas(self.content, width=self.PREVIEW_W, height=self.GRAD_H)
         self.grad_canvas.pack(padx=10, pady=(0, 10))
         self.grad_item = self.grad_canvas.create_image(0, 0, anchor="nw")
 
     def _build_mode_controls(self):
-        mode_frame = tk.Frame(self.root)
+        mode_frame = tk.Frame(self.content)
         mode_frame.pack(padx=10, pady=(4, 0), anchor="w")
         tk.Label(mode_frame, text="Interpolation :").pack(side="left")
         tk.Radiobutton(mode_frame, text="RGB", variable=self.mode_var, value="rgb",
@@ -163,7 +199,7 @@ class MainWindow:
                     command=self._recompute_fractal).pack(side="left")
 
     def _build_sanzo_controls(self):
-        f = tk.LabelFrame(self.root, text="Combinaison Sanzo Wada")
+        f = tk.LabelFrame(self.content, text="Combinaison Sanzo Wada")
         f.pack(padx=10, pady=4, fill="x")
         tk.Button(f, text="◀ Précédent", command=self._sanzo_prev).pack(side="left", padx=4, pady=4)
         tk.Label(f, textvariable=self.sanzo_label_var, width=14).pack(side="left", padx=4)
@@ -174,7 +210,7 @@ class MainWindow:
     def _build_palette_controls(self):
         # cadre persistant : son contenu (les lignes) est reconstruit à chaque
         # changement de combinaison, car le nombre de stops varie (2 à 4 couleurs)
-        self.pal_frame = tk.LabelFrame(self.root, text="Palette")
+        self.pal_frame = tk.LabelFrame(self.content, text="Palette")
         self.pal_frame.pack(padx=10, pady=4, fill="x")
         self._populate_palette_rows()
 
@@ -200,7 +236,7 @@ class MainWindow:
             sc.pack(side="left")
 
     def _build_c_controls(self):
-        c_frame = tk.LabelFrame(self.root, text="Paramètre c")
+        c_frame = tk.LabelFrame(self.content, text="Paramètre c")
         c_frame.pack(padx=10, pady=4, fill="x")
         self.c_re.trace_add("write", self._update_c_label)
         self.c_im.trace_add("write", self._update_c_label)
@@ -222,7 +258,7 @@ class MainWindow:
         tk.Label(c_frame, textvariable=self.c_label_var).pack(pady=(2, 4))
 
     def _build_transform_controls(self):
-        f = tk.LabelFrame(self.root, text="Transformation du plan  (pullback : pixel → point échantillonné)")
+        f = tk.LabelFrame(self.content, text="Transformation du plan  (pullback : pixel → point échantillonné)")
         f.pack(padx=10, pady=4, fill="x")
         row = tk.Frame(f)
         row.pack(fill="x", padx=6, pady=4)
@@ -239,7 +275,7 @@ class MainWindow:
                       command=lambda e=expr: self._set_transform(e)).pack(side="left", padx=2)
 
     def _build_buttons(self):
-        btns = tk.Frame(self.root)
+        btns = tk.Frame(self.content)
         btns.pack(pady=8)
         tk.Button(btns, text="Régénérer", command=self._recompute_fractal).pack(side="left", padx=4)
         tk.Button(btns, text="c aléatoire", command=self._c_aleatoire).pack(side="left", padx=4)
@@ -290,6 +326,16 @@ class MainWindow:
         px, py = self._c_to_pixel(self._current_c())
         r = 4
         self.mandel_canvas.coords(self.mandel_dot, px - r, py - r, px + r, py + r)
+
+    def _on_mandel_click(self, event):
+        # pixel -> c (inverse de _c_to_pixel), puis on recalcule la Julia
+        borne = self.BORNE
+        borne_y = borne * self.PREVIEW_H / self.PREVIEW_W
+        re = -borne + event.x / (self.PREVIEW_W - 1) * (2 * borne)
+        im = -borne_y + event.y / (self.PREVIEW_H - 1) * (2 * borne_y)
+        self.c_re.set(round(re, 4))     # déclenche aussi le déplacement du point rouge
+        self.c_im.set(round(im, 4))
+        self._recompute_fractal()
 
     def _current_c(self) -> complex:
         return complex(self.c_re.get(), self.c_im.get())
