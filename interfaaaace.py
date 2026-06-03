@@ -45,6 +45,7 @@ class MainWindow:
         self.smooth_var = tk.BooleanVar(value=True)   # lissage logarithmique vs comptage classique
         self.cyclic_var = tk.BooleanVar(value=False)  # bandes cycliques (couleur = itérations % N)
         self.equalize_var = tk.BooleanVar(value=False)  # égalisation d'histogramme
+        self.clip_limit = tk.DoubleVar(value=3.0)       # limite de contraste de l'égalisation
         self.mirror_var = tk.BooleanVar(value=False)  # dégradé répété en miroir n fois
         self.mirror_n = tk.IntVar(value=3)            # nombre de répétitions du dégradé
         self.ssaa = tk.IntVar(value=1)                # supersampling (anti-aliasing) : 1 = off
@@ -83,13 +84,20 @@ class MainWindow:
         except (tk.TclError, ValueError):
             return 1
 
+    def _clip_limit_value(self) -> float:
+        try:
+            return max(1.0, float(self.clip_limit.get()))
+        except (tk.TclError, ValueError):
+            return 3.0
+
     def _coloriser(self, V: np.ndarray) -> np.ndarray:
         if self.cyclic_var.get():
             renderer = render.FractalRenderer(self.palette, "cyclic", self.N_ITER)
         else:
             renderer = render.FractalRenderer(self.palette, self.mode_var.get(),
                                               repeat=self._mirror_repeat_count(),
-                                              equalize=self.equalize_var.get())
+                                              equalize=self.equalize_var.get(),
+                                              clip_limit=self._clip_limit_value())
         return renderer.render(V)
 
     def _on_cyclic_toggle(self):
@@ -191,9 +199,14 @@ class MainWindow:
         # bandes cycliques : couleur indexée par (itérations % N), ignore l'interpolation
         tk.Checkbutton(mode_frame, text="Bandes (mod N)", variable=self.cyclic_var,
                        command=self._on_cyclic_toggle).pack(side="left")
-        # égalisation d'histogramme : recoloration seule (remappe le champ par sa CDF)
+        # égalisation d'histogramme à contraste limité : recoloration seule
         tk.Checkbutton(mode_frame, text="Histogramme", variable=self.equalize_var,
                        command=self._apply_palette).pack(side="left")
+        tk.Label(mode_frame, text="lim.").pack(side="left")
+        sp = ttk.Spinbox(mode_frame, from_=1.0, to=20.0, increment=0.5, width=4,
+                         textvariable=self.clip_limit, command=self._apply_palette)
+        sp.pack(side="left")
+        self.clip_limit.trace_add("write", lambda *_: self._apply_palette())
         # dégradé miroir : replie le dégradé n fois (recoloration seule, pas de recalcul)
         tk.Checkbutton(mode_frame, text="Miroir ×", variable=self.mirror_var,
                        command=self._apply_palette).pack(side="left")

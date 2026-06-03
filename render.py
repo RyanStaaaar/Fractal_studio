@@ -211,18 +211,33 @@ def downscale(image: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
     return np.asarray(Image.fromarray(image).resize((out_w, out_h), Image.LANCZOS))
 
 
-def equalize_field(V: np.ndarray) -> np.ndarray:
-    """Égalisation d'histogramme : remappe V par sa CDF pour répartir les couleurs
-    uniformément (chaque valeur devient son rang relatif dans l'image). Les points
-    de l'ensemble (V == 0, jamais échappés) restent à 0."""
+def equalize_field(V: np.ndarray, clip_limit: float = 0.0) -> np.ndarray:
+    """Égalisation d'histogramme à contraste limité (type CLAHE global).
+
+    Remappe V par sa CDF pour répartir les couleurs. `clip_limit` borne l'effectif
+    de chaque classe à `clip_limit ×` l'effectif moyen (l'excédent est redistribué) :
+    cela empêche une zone dominante (le fond) de monopoliser la palette et préserve
+    le contraste du détail. 0 = pas de limite (égalisation pure). V==0 reste à 0.
+    """
     eq = np.zeros_like(V, dtype=np.float64)
     mask = V > 0
     vals = V[mask]
     if vals.size == 0:
         return eq
-    _, inv, counts = np.unique(vals, return_inverse=True, return_counts=True)
-    cdf = np.cumsum(counts) / vals.size          # CDF dans (0, 1], égales valeurs -> même couleur
-    eq[mask] = cdf[inv.ravel()]
+    lo, hi = float(vals.min()), float(vals.max())
+    if hi <= lo:
+        return eq
+    bins = 1024
+    hist, edges = np.histogram(vals, bins=bins, range=(lo, hi))
+    hist = hist.astype(np.float64)
+    if clip_limit > 0:                               # écrête les pics puis redistribue
+        clip = max(clip_limit * vals.size / bins, 1.0)
+        excess = np.clip(hist - clip, 0.0, None).sum()
+        hist = np.minimum(hist, clip) + excess / bins
+    cdf = np.cumsum(hist)
+    cdf /= cdf[-1]                                   # normalise en [0,1]
+    cdf_edges = np.concatenate([[0.0], cdf])         # aligné sur `edges` (len bins+1)
+    eq[mask] = np.interp(vals, edges, cdf_edges)     # CDF interpolée par pixel
     return eq
 
 
@@ -235,12 +250,13 @@ def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
 
 class FractalRenderer:
     def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1,
-                 equalize: bool = False):
+                 equalize: bool = False, clip_limit: float = 3.0):
         self.palette = palette
         self.mode = mode
-        self.n_iter = n_iter      # utilisé seulement par le mode "cyclic"
-        self.repeat = repeat      # > 1 : dégradé répété en miroir (cyclic gradient)
-        self.equalize = equalize  # True : égalisation d'histogramme avant l'interpolation
+        self.n_iter = n_iter        # utilisé seulement par le mode "cyclic"
+        self.repeat = repeat        # > 1 : dégradé répété en miroir (cyclic gradient)
+        self.equalize = equalize    # True : égalisation d'histogramme avant l'interpolation
+        self.clip_limit = clip_limit  # limite de contraste de l'égalisation (0 = pure)
 
     def render(self, V: np.ndarray) -> np.ndarray:
         # bandes indexées : pas d'interpolation ni de répétition de dégradé
@@ -248,7 +264,7 @@ class FractalRenderer:
             return coloriser_cyclic(V, self.palette, self.n_iter)
         # dégradé : égalisation d'histogramme puis éventuel repli miroir, avant interpolation
         if self.equalize:
-            V = equalize_field(V)
+            V = equalize_field(V, self.clip_limit)
         if self.repeat > 1:
             V = mirror_repeat(V, self.repeat)
         if self.mode == "hsv":

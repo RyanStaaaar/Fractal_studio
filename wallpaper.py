@@ -16,6 +16,7 @@ class WallpaperApp:
     SMOOTH = True         # lissage logarithmique (ignoré si MODE == "cyclic")
     REPEAT = 1            # > 1 : dégradé replié en miroir n fois (ignoré si MODE == "cyclic")
     EQUALIZE = False      # True : égalisation d'histogramme (répartit les couleurs uniformément)
+    CLIP_LIMIT = 3.0      # limite de contraste de l'égalisation (bas = + de détail, haut = égalisation pure)
     SSAA = 2             # supersampling anti-aliasing : 1 = off, 2 = calcul ×2 puis réduit
     TRANSFORM = "z"      # transformation du plan f(z) (pullback) : "z" = aucune ; ex "i*z", "z^2", "e^z"
     N_ITER = 100           # nombre d'itérations
@@ -40,7 +41,8 @@ class WallpaperApp:
         V = gen.generate_julia(poly)
         palette = render.make_random_palette()
         renderer = render.FractalRenderer(palette, mode=self.MODE, n_iter=self.N_ITER,
-                                          repeat=self.REPEAT, equalize=self.EQUALIZE)
+                                          repeat=self.REPEAT, equalize=self.EQUALIZE,
+                                          clip_limit=self.CLIP_LIMIT)
         image = render.downscale(renderer.render(V), self.WIDTH, self.HEIGHT)
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"
