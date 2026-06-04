@@ -211,6 +211,20 @@ def downscale(image: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
     return np.asarray(Image.fromarray(image).resize((out_w, out_h), Image.LANCZOS))
 
 
+def downscale_field(V: np.ndarray, k: int) -> np.ndarray:
+    """Box-filter le champ scalaire V par facteur k (SSAA sur V avant colorisation).
+
+    Beaucoup plus rapide que downscaler l'image RGB après colorisation : la
+    colorisation Oklab tourne à la résolution de sortie (1×) plutôt qu'à k²×.
+    L'anti-aliasing est identique — la moyenne se fait en espace V, pas RGB.
+    """
+    if k <= 1:
+        return V
+    H, W = V.shape
+    H2, W2 = (H // k) * k, (W // k) * k
+    return V[:H2, :W2].reshape(H2 // k, k, W2 // k, k).mean(axis=(1, 3))
+
+
 def equalize_field(V: np.ndarray, clip_limit: float = 0.0) -> np.ndarray:
     """Égalisation d'histogramme à contraste limité (type CLAHE global).
 
@@ -248,89 +262,30 @@ def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
     return 1.0 - np.abs((u % 2.0) - 1.0)
 
 
-def shade(height: np.ndarray, color: np.ndarray, azimuth: float = 135.0,
-          elevation: float = 45.0, depth: float = 2.0, warmth: float = 0.5,
-          shadow_floor: float = 0.4) -> np.ndarray:
-    """Ombrage pictural (température de couleur), pas un simple assombrissement.
-
-    La lumière de Lambert (normale tirée du gradient de `height`) pilote une rampe
-    ombre→demi-teinte→lumière interpolée en **Oklab** (perceptuel, pas de demi-teinte
-    boueuse). Les ombres ne virent pas au noir : luminosité plancher coloré +
-    décalage de teinte vers le **froid** (bleu) ; les lumières décalent vers le
-    **chaud** (orange). `color` = image RGB déjà colorée ; `height` = champ lissé.
-
-    - azimuth/elevation : direction de la lumière (degrés)
-    - depth : force du relief
-    - warmth : amplitude du décalage chaud/froid
-    - shadow_floor : luminosité minimale des ombres (plancher coloré, 0 = quasi noir)
-    """
-    # neutre : aucun assombrissement ni virage -> on renvoie l'image telle quelle
-    # (évite l'aller-retour Oklab qui décalerait chaque pixel de ~1/255)
-    if warmth == 0.0 and shadow_floor >= 1.0:
-        return color
-
-    az, el = np.radians(azimuth), np.radians(elevation)
-    lx, ly, lz = np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)
-    gy, gx = np.gradient(height.astype(np.float64))
-    nx, ny, nz = -depth * gx, -depth * gy, np.ones_like(gx)
-    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
-    d = np.clip((nx * lx + ny * ly + nz * lz) * inv, 0.0, 1.0)   # facteur diffus [0,1]
-
-    # tout le mélange se fait en Oklab pour des transitions perceptuellement lisses
-    L0, a0, b0 = (lambda lab: (lab[..., 0], lab[..., 1], lab[..., 2]))(
-        srgb_to_oklab(color.astype(np.float64) / 255.0))
-
-    light_gain = 1.0                                            # 1.0 -> neutre atteignable
-    factor = shadow_floor + (light_gain - shadow_floor) * d      # plancher coloré, jamais 0
-    # neutre exact : shadow_floor=1 & warmth=0 -> facteur≡1 et aucun virage de teinte
-    L1 = np.clip(L0 * factor, 0.0, 1.0)
-
-    temp = d * 2.0 - 1.0                                         # -1 ombre .. +1 lumière
-    a1 = a0 + warmth * temp * 0.03                               # +a léger (rouge) en lumière
-    b1 = b0 + warmth * temp * 0.10                               # +b chaud (jaune) / -b froid (bleu)
-
-    rgb = oklab_to_srgb(np.stack([L1, a1, b1], axis=-1)) * 255.0
-    return np.clip(rgb, 0, 255).astype(np.uint8)
-
 
 class FractalRenderer:
     def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1,
-                 equalize: bool = False, clip_limit: float = 3.0,
-                 light: bool = False, azimuth: float = 135.0, elevation: float = 45.0,
-                 depth: float = 2.0, warmth: float = 0.5, shadow_floor: float = 0.4):
+                 equalize: bool = False, clip_limit: float = 3.0):
         self.palette = palette
         self.mode = mode
-        self.n_iter = n_iter        # utilisé seulement par le mode "cyclic"
-        self.repeat = repeat        # > 1 : dégradé répété en miroir (cyclic gradient)
-        self.equalize = equalize    # True : égalisation d'histogramme avant l'interpolation
-        self.clip_limit = clip_limit  # limite de contraste de l'égalisation (0 = pure)
-        self.light = light          # True : ombrage pictural (relief)
-        self.azimuth = azimuth
-        self.elevation = elevation
-        self.depth = depth
-        self.warmth = warmth          # amplitude du décalage chaud/froid
-        self.shadow_floor = shadow_floor  # plancher de luminosité des ombres
+        self.n_iter = n_iter
+        self.repeat = repeat
+        self.equalize = equalize
+        self.clip_limit = clip_limit
 
     def render(self, V: np.ndarray) -> np.ndarray:
-        # V (champ lissé brut) sert de carte de hauteur pour l'éclairage ; Vc sert à colorer
         if self.mode == "cyclic":
-            img = coloriser_cyclic(V, self.palette, self.n_iter)
-        else:
-            Vc = V
-            if self.equalize:
-                Vc = equalize_field(Vc, self.clip_limit)
-            if self.repeat > 1:
-                Vc = mirror_repeat(Vc, self.repeat)
-            if self.mode == "hsv":
-                img = coloriser_hsv(Vc, self.palette)
-            elif self.mode == "oklab":
-                img = coloriser_oklab(Vc, self.palette)
-            else:
-                img = coloriser_rgb(Vc, self.palette)
-        if self.light:
-            img = shade(V, img, self.azimuth, self.elevation, self.depth,
-                        self.warmth, self.shadow_floor)
-        return img
+            return coloriser_cyclic(V, self.palette, self.n_iter)
+        Vc = V
+        if self.equalize:
+            Vc = equalize_field(Vc, self.clip_limit)
+        if self.repeat > 1:
+            Vc = mirror_repeat(Vc, self.repeat)
+        if self.mode == "hsv":
+            return coloriser_hsv(Vc, self.palette)
+        elif self.mode == "oklab":
+            return coloriser_oklab(Vc, self.palette)
+        return coloriser_rgb(Vc, self.palette)
 
     def save(self, image: np.ndarray, path) -> None:
         Image.fromarray(image).save(path)

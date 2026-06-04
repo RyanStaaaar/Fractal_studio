@@ -15,17 +15,11 @@ class WallpaperApp:
     # ------------------------------------------------------------------ #
     MODE = "oklab"        # interpolation des couleurs : "rgb" | "hsv" | "oklab" | "cyclic"
     SMOOTH = True         # lissage logarithmique (ignoré si MODE == "cyclic")
-    REPEAT = random.randint(1,3)      # > 1 : dégradé replié en miroir n fois (ignoré si MODE == "cyclic")
+    REPEAT = random.randint(2,4)      # > 1 : dégradé replié en miroir n fois (ignoré si MODE == "cyclic")
     EQUALIZE = True      # True : égalisation d'histogramme (répartit les couleurs uniformément)
     CLIP_LIMIT = 5.5      # limite de contraste de l'égalisation (bas = + de détail, haut = égalisation pure)
-    SSAA = 2             # supersampling anti-aliasing : 1 = off, 2 = calcul ×2 puis réduit
+    SSAA = 4             # supersampling anti-aliasing : 1 = off, 2 = calcul ×2 puis réduit
     TRANSFORM = "z"      # transformation du plan f(z) (pullback) : "z" = aucune ; ex "i*z", "z^2", "e^z"
-    LIGHT = False        # True : relief par éclairage lambertien
-    AZIMUTH = 135.0      # direction de la lumière (degrés)
-    ELEVATION = 45.0     # hauteur de la lumière (degrés)
-    DEPTH = 2.0          # force du relief
-    WARMTH = 0.5         # décalage chaud (lumière) / froid (ombre) de l'ombrage pictural
-    SHADOW_FLOOR = 0.4   # plancher de luminosité des ombres (plancher coloré, 0 = quasi noir)
     N_ITER = 100           # nombre d'itérations
     WIDTH, HEIGHT = 3024, 1964   # résolution de l'image
     # ------------------------------------------------------------------ #
@@ -45,15 +39,12 @@ class WallpaperApp:
                                        smooth=smooth, transform=transform)
         c = gen.pick_interesting_c()
         poly = iteration.Poly(1, 0, c)
-        V = gen.generate_julia(poly)
+        V = render.downscale_field(gen.generate_julia(poly), k)
         palette = render.make_random_palette()
         renderer = render.FractalRenderer(palette, mode=self.MODE, n_iter=self.N_ITER,
                                           repeat=self.REPEAT, equalize=self.EQUALIZE,
-                                          clip_limit=self.CLIP_LIMIT,
-                                          light=self.LIGHT, azimuth=self.AZIMUTH,
-                                          elevation=self.ELEVATION, depth=self.DEPTH,
-                                          warmth=self.WARMTH, shadow_floor=self.SHADOW_FLOOR)
-        image = render.downscale(renderer.render(V), self.WIDTH, self.HEIGHT)
+                                          clip_limit=self.CLIP_LIMIT)
+        image = renderer.render(V)
         today = datetime.today().strftime("%d_%m_%Y")
         path = self.output_dir / f"wallpaper_{today}.png"
         renderer.save(image, path)
@@ -74,3 +65,4 @@ class WallpaperApp:
 if __name__ == "__main__":
     output_dir = Path(__file__).parent / "Wallpapers"
     WallpaperApp(output_dir).run()
+    print(WallpaperApp.REPEAT)

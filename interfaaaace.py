@@ -51,12 +51,6 @@ class MainWindow:
         self.ssaa = tk.IntVar(value=1)                # supersampling (anti-aliasing) : 1 = off
         self.transform_var = tk.StringVar(value="z")  # transfo du plan f(z) (pullback)
         self.transform = None                         # callable courant (None = identité)
-        self.light_var = tk.BooleanVar(value=False)   # relief / éclairage lambertien
-        self.azimuth = tk.DoubleVar(value=135.0)
-        self.elevation = tk.DoubleVar(value=45.0)
-        self.depth = tk.DoubleVar(value=2.0)
-        self.warmth = tk.DoubleVar(value=0.5)         # décalage chaud/froid de l'ombrage
-        self.shadow_floor = tk.DoubleVar(value=0.4)   # plancher de luminosité des ombres
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
 
@@ -67,7 +61,6 @@ class MainWindow:
         self._build_palette_controls()
         self._build_c_controls()
         self._build_transform_controls()
-        self._build_light_controls()
         self._build_buttons()
         self._fit_window()
 
@@ -103,11 +96,7 @@ class MainWindow:
             self.palette, mode, self.N_ITER,
             repeat=self._mirror_repeat_count(),
             equalize=self.equalize_var.get(),
-            clip_limit=self._clip_limit_value(),
-            light=self.light_var.get(),
-            azimuth=self.azimuth.get(), elevation=self.elevation.get(),
-            depth=self.depth.get(), warmth=self.warmth.get(),
-            shadow_floor=self.shadow_floor.get())
+            clip_limit=self._clip_limit_value())
         return renderer.render(V)
 
     def _on_cyclic_toggle(self):
@@ -305,23 +294,6 @@ class MainWindow:
             tk.Button(presets, text=expr, width=4,
                       command=lambda e=expr: self._set_transform(e)).pack(side="left", padx=2)
 
-    def _build_light_controls(self):
-        f = tk.LabelFrame(self.content, text="Relief (éclairage Lambert)")
-        f.pack(padx=10, pady=4, fill="x")
-        tk.Checkbutton(f, text="Activer", variable=self.light_var,
-                       command=self._apply_palette).pack(anchor="w", padx=6, pady=(2, 0))
-        for label, var, lo, hi, res in (("Azimut", self.azimuth, 0, 360, 1),
-                                        ("Élévation", self.elevation, 0, 90, 1),
-                                        ("Profondeur", self.depth, 0, 10, 0.1),
-                                        ("Chaleur", self.warmth, 0, 1, 0.05),
-                                        ("Plancher", self.shadow_floor, 0, 1, 0.05)):
-            row = tk.Frame(f)
-            row.pack(fill="x", padx=6, pady=1)
-            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
-            tk.Scale(row, from_=lo, to=hi, resolution=res, orient="horizontal", length=260,
-                     variable=var, command=lambda *_: self._apply_palette()).pack(side="left",
-                                                                                  fill="x", expand=True)
-
     def _build_buttons(self):
         btns = tk.Frame(self.content)
         btns.pack(pady=8)
@@ -435,18 +407,17 @@ class MainWindow:
         return False if self.cyclic_var.get() else self.smooth_var.get()
 
     def _recompute_fractal(self, *_):
-        # V calculé à k× la résolution d'aperçu ; réduit au moment de l'affichage
         k = self._ssaa_factor()
         gen = fractal.FractalGenerator(self.PREVIEW_H * k, self.PREVIEW_W * k, self.N_ITER,
                                        smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
-        self.V_preview = gen.generate_julia(poly)
+        self.V_preview = render.downscale_field(gen.generate_julia(poly), k)
         self._redraw_fractal()
 
     def _redraw_fractal(self):
         if self.V_preview is None:
             return
-        C = render.downscale(self._coloriser(self.V_preview), self.PREVIEW_W, self.PREVIEW_H)
+        C = self._coloriser(self.V_preview)
         photo = ImageTk.PhotoImage(Image.fromarray(C))
         self.fractal_canvas.itemconfig(self.fractal_item, image=photo)
         self.fractal_canvas.image = photo
@@ -469,14 +440,12 @@ class MainWindow:
         self._recompute_fractal()
 
     def _compute_hd(self) -> np.ndarray:
-        # calcule la fractale en pleine résolution (FULL_W x FULL_H) pour le c courant,
-        # avec supersampling k× puis réduction moyennée (anti-aliasing)
         k = self._ssaa_factor()
         gen = fractal.FractalGenerator(self.FULL_H * k, self.FULL_W * k, self.N_ITER,
                                        smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
-        V_full = gen.generate_julia(poly)
-        return render.downscale(self._coloriser(V_full), self.FULL_W, self.FULL_H)
+        V_full = render.downscale_field(gen.generate_julia(poly), k)
+        return self._coloriser(V_full)
 
     def _show_hd_popup(self, *_):
         # le calcul HD prend ~1 s : curseur d'attente pendant le rendu

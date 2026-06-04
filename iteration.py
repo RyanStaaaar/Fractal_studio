@@ -11,8 +11,8 @@ class Poly :
 
 # smooth=True : coloration lissée (escape time logarithmique, dégradés continus)
 # smooth=False : version classique (compte d'itérations avant échappement)
-@njit(parallel=True)
-def escape_speed(Z, a, b, c, n=100, B=2, smooth=True):
+@njit(parallel=True, cache=True)
+def escape_speed(Z, a, b, c, n=100, B=256, smooth=True):
     H, W = Z.shape
     V = np.zeros((H, W))
     B2 = B * B
@@ -31,7 +31,7 @@ def escape_speed(Z, a, b, c, n=100, B=2, smooth=True):
                     break
     return V
 
-@njit(parallel=True)
+@njit(parallel=True, cache=True)
 def mandelbrot(C, seed, n=100, B=2.0, smooth=True):
     H, W = C.shape
     V = np.zeros((H, W))
