@@ -178,6 +178,77 @@ def trap_image_mandelbrot(C, tex, rect, n=100, B=256.0, min_iter=2, angle=0.0):
 
 
 @njit(parallel=True, cache=True)
+def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle_step,
+                                  n=100, B=256.0):
+    """Geometric-series image trap for Julia sets.
+
+    Places N copies of tex in the complex plane: copy k has width base_size*r^k
+    and is rotated by k*angle_step radians relative to copy 0. Center of copy 0
+    is (cx, cy). First hit across all copies and all orbit steps wins.
+    Untrapped pixels have alpha=0.
+
+    Returns uint8 (H, W, 4) RGBA.
+    """
+    H, W = Z.shape
+    TH, TW = tex.shape[0], tex.shape[1]
+    aspect = float(TH) / float(TW)  # height / width — preserves image proportions
+
+    # Precompute per-copy scale and rotation (single-threaded, before prange)
+    scales = np.empty(N, dtype=np.float64)
+    cos_ks = np.empty(N, dtype=np.float64)
+    sin_ks = np.empty(N, dtype=np.float64)
+    sc = 1.0
+    for k in range(N):
+        scales[k] = sc
+        ang = float(k) * angle_step
+        cos_ks[k] = math.cos(ang)
+        sin_ks[k] = math.sin(ang)
+        sc *= r
+
+    out = np.zeros((H, W, 4), dtype=np.uint8)
+    B2 = B * B
+
+    for y in prange(H):
+        for x in range(W):
+            z = Z[y, x]
+            hit = False
+            for it in range(n):
+                z = a * z * z + b * z + c
+                zr = z.real
+                zi = z.imag
+                for k in range(N):
+                    sc_k = scales[k]
+                    ck = cos_ks[k]
+                    sk = sin_ks[k]
+                    # Translate to copy-0 center then rotate into copy-k local frame
+                    dre = zr - cx
+                    dim = zi - cy
+                    local_re =  ck * dre + sk * dim
+                    local_im = -sk * dre + ck * dim
+                    # Half-extents of copy k
+                    hw = base_size * sc_k * 0.5
+                    hh = base_size * sc_k * aspect * 0.5
+                    if -hw <= local_re <= hw and -hh <= local_im <= hh:
+                        u = (local_re + hw) / (base_size * sc_k)
+                        v = (hh - local_im) / (base_size * sc_k * aspect)
+                        tj = int(u * float(TW - 1) + 0.5)
+                        ti = int(v * float(TH - 1) + 0.5)
+                        if 0 <= ti < TH and 0 <= tj < TW:
+                            if tex[ti, tj, 3] != 0:
+                                out[y, x, 0] = tex[ti, tj, 0]
+                                out[y, x, 1] = tex[ti, tj, 1]
+                                out[y, x, 2] = tex[ti, tj, 2]
+                                out[y, x, 3] = 255
+                                hit = True
+                                break  # break k loop
+                if hit:
+                    break  # break it loop
+                if zr * zr + zi * zi > B2:
+                    break  # break it loop — escaped
+    return out
+
+
+@njit(parallel=True, cache=True)
 def trap_julia(Z, a, b, c, trap_type, trap_params, n=100, B=256.0, norm_max=1.0):
     """Julia orbit trap: V[y,x] = min distance to trap shape over the orbit, normalised."""
     H, W = Z.shape
