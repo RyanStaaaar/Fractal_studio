@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 import iteration
+import orbit_trap
 
 
 class FractalGenerator:
@@ -44,6 +45,56 @@ class FractalGenerator:
         if self.transform is not None:          # pullback : on échantillonne en f(w)
             C = self.transform(C)
         return iteration.mandelbrot(C, seed, self.n_iter, smooth=self.smooth)
+
+    def generate_julia_trap(self, poly: iteration.Poly, trap_type: int, trap_params: np.ndarray,
+                            norm_max: float = 1.0, borne: float = 2) -> np.ndarray:
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        if self.transform is not None:
+            Z = self.transform(Z)
+        return orbit_trap.trap_julia(Z, poly.a, poly.b, poly.c,
+                                     trap_type, trap_params, self.n_iter, 256.0, norm_max)
+
+    def generate_mandelbrot_trap(self, trap_type: int, trap_params: np.ndarray,
+                                  norm_max: float = 1.0, borne: float = 2) -> np.ndarray:
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        C = X + 1j * Y
+        if self.transform is not None:
+            C = self.transform(C)
+        return orbit_trap.trap_mandelbrot(C, trap_type, trap_params, self.n_iter, 256.0, norm_max)
+
+    def generate_julia_image_trap(self, poly: iteration.Poly, tex: np.ndarray,
+                                   rect: np.ndarray, min_iter: int = 2,
+                                   borne: float = 2, angle: float = 0.0) -> np.ndarray:
+        """Returns uint8 (H, W, 4) RGBA. Untrapped pixels have alpha=0."""
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        if self.transform is not None:
+            Z = self.transform(Z)
+        return orbit_trap.trap_image_julia(Z, poly.a, poly.b, poly.c,
+                                           tex, rect, self.n_iter, 256.0, min_iter, angle)
+
+    def generate_mandelbrot_image_trap(self, tex: np.ndarray, rect: np.ndarray,
+                                        min_iter: int = 2, borne: float = 2,
+                                        angle: float = 0.0) -> np.ndarray:
+        """Returns uint8 (H, W, 4) RGBA. Untrapped pixels have alpha=0."""
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        C = X + 1j * Y
+        if self.transform is not None:
+            C = self.transform(C)
+        return orbit_trap.trap_image_mandelbrot(C, tex, rect, self.n_iter, 256.0, min_iter, angle)
 
     def generate_mosaic(self, n_sub: int = 11, tile_size: int = 100, borne_julia: float = 2, borne_c: float = 2) -> np.ndarray:
         meta_size = n_sub * tile_size

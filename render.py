@@ -297,36 +297,44 @@ class FractalRenderer:
 # ------------------------------------------------------------------ #
 _SANZO_PATH = Path(__file__).parent / "data" / "sanzo_colors.json"
 _sanzo_palettes_cache = None
-
+_sanzo_names_cache = None
 
 def copy_palette(palette: list) -> list:
     """Copie profonde d'une palette [positions, colors] (évite de muter le cache partagé)."""
     return [list(palette[0]), [list(c) for c in palette[1]]]
 
 
-def load_sanzo_palettes(path=_SANZO_PATH) -> list:
-    """Charge les combinaisons Sanzo Wada -> liste de palettes [positions, colors].
-
-    Le JSON est centré-couleur : chaque couleur indique les combinaisons (1-348)
-    auxquelles elle appartient. On regroupe par combinaison pour reconstruire
-    chaque palette, avec des positions de dégradé réparties uniformément sur [0, 1].
-    Le résultat est mis en cache (liste partagée — utiliser copy_palette pour muter).
-    """
-    global _sanzo_palettes_cache
+def _load_sanzo_raw(path=_SANZO_PATH):
+    global _sanzo_palettes_cache, _sanzo_names_cache
     if _sanzo_palettes_cache is None:
         data = json.loads(Path(path).read_text())
-        combos: dict[int, list] = {}
+        combos_rgb:  dict[int, list] = {}
+        combos_name: dict[int, list] = {}
         for color in data:
             for cid in color["combinations"]:
-                combos.setdefault(cid, []).append(color["rgb"])
-        palettes = []
-        for cid in sorted(combos):
-            colors = combos[cid]
+                combos_rgb.setdefault(cid, []).append(color["rgb"])
+                combos_name.setdefault(cid, []).append(color["name"])
+        palettes, names = [], []
+        for cid in sorted(combos_rgb):
+            colors = combos_rgb[cid]
             n = len(colors)
             positions = [i / (n - 1) for i in range(n)] if n > 1 else [0.0]
             palettes.append([positions, [list(c) for c in colors]])
+            names.append(f"{len(names)} · {' · '.join(combos_name[cid])}")
         _sanzo_palettes_cache = palettes
+        _sanzo_names_cache = names
+
+
+def load_sanzo_palettes(path=_SANZO_PATH) -> list:
+    """Charge les combinaisons Sanzo Wada -> liste de palettes [positions, colors]."""
+    _load_sanzo_raw(path)
     return _sanzo_palettes_cache
+
+
+def load_sanzo_names(path=_SANZO_PATH) -> list[str]:
+    """Retourne les noms des combinaisons Sanzo Wada, dans le même ordre que load_sanzo_palettes()."""
+    _load_sanzo_raw(path)
+    return _sanzo_names_cache
 
 
 def make_random_palette() -> list:

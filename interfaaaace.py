@@ -1,11 +1,12 @@
 from pathlib import Path
 from datetime import datetime
+import math
 import random
 
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageFilter
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox
+from tkinter import ttk, simpledialog, messagebox, filedialog
 
 import iteration
 import render
@@ -35,6 +36,7 @@ class MainWindow:
 
         # combinaisons de couleurs Sanzo Wada ; on démarre sur une au hasard
         self.sanzo_palettes = render.load_sanzo_palettes()
+        self.sanzo_names = render.load_sanzo_names()
         self.sanzo_index = random.randrange(len(self.sanzo_palettes))
         self.palette = render.copy_palette(self.sanzo_palettes[self.sanzo_index])
 
@@ -53,16 +55,51 @@ class MainWindow:
         self.transform = None                         # callable courant (None = identité)
         self.c_label_var = tk.StringVar()
         self.sanzo_label_var = tk.StringVar()
+        self.sanzo_combo_var = tk.StringVar()
+
+        # image trap
+        self.img_trap_enabled  = tk.BooleanVar(value=False)
+        self.img_trap_tex      = None          # numpy uint8 (TH, TW, 4) ou None
+        self.img_trap_path_var = tk.StringVar(value="(aucune image)")
+        self.img_trap_re_min   = tk.DoubleVar(value=-2.0)
+        self.img_trap_re_max   = tk.DoubleVar(value=2.0)
+        self.img_trap_im_min   = tk.DoubleVar(value=-2.0)
+        self.img_trap_im_max   = tk.DoubleVar(value=2.0)
+        self.img_trap_min_iter = tk.IntVar(value=2)
+        self.img_smooth_var    = tk.BooleanVar(value=False)
+        self.img_rgba          = None          # RGBA brut du noyau Numba (alpha=0 → non piégé)
+        self.img_preview       = None          # RGB composité prêt à l'affichage
+        self.img_trap_pil      = None          # PIL Image RGBA pour miniature canvas
+        self.img_trap_angle_deg = tk.DoubleVar(value=0.0)  # degrés (−180 … 180)
+        self._trap_shape_drag_start = None         # (mx0, my0, cx0, cy0)
+        self._trap_drag_mode   = None          # "move" | "resize_nw/ne/sw/se" | "rotate"
+        self._trap_drag_start  = None          # (mx, my, re_min, re_max, im_min, im_max)
+        self._trap_drag_anchor = (0.0, 0.0)    # coin fixe lors d'un resize
+        self.trap_rand_mu    = tk.DoubleVar(value=0.0)
+        self.trap_rand_sigma = tk.DoubleVar(value=0.5)
+
+        # orbit trap
+        self.trap_enabled  = tk.BooleanVar(value=False)
+        self.trap_type_var = tk.StringVar(value="point")
+        self.trap_cx       = tk.DoubleVar(value=0.0)
+        self.trap_cy       = tk.DoubleVar(value=0.0)
+        self.trap_angle    = tk.DoubleVar(value=0.0)   # degrés (ligne/croix)
+        self.trap_radius   = tk.DoubleVar(value=0.5)   # rayon (cercle/carré) ou amplitude (sinus)
+        self.trap_freq     = tk.DoubleVar(value=2.0)   # fréquence (sinus)
+        self.trap_norm_max = tk.DoubleVar(value=1.0)
 
         self._build_scroll_container()
         self._build_top_row()
         self._build_mode_controls()
-        self._build_sanzo_controls()
-        self._build_palette_controls()
+        self._build_tabs()
         self._build_c_controls()
         self._build_transform_controls()
         self._build_buttons()
         self._fit_window()
+
+        _demo = Path(__file__).parent / "trap_demo.png"
+        if _demo.exists():
+            self._load_trap_image_path(str(_demo))
 
         self._recompute_fractal()
         self._update_gradient()
@@ -115,10 +152,15 @@ class MainWindow:
         vbar.pack(side="right", fill="y")
         self.scroll_canvas.pack(side="left", fill="both", expand=True)
         self.content = tk.Frame(self.scroll_canvas)
-        self.scroll_canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self._content_win = self.scroll_canvas.create_window((0, 0), window=self.content, anchor="nw")
         self.content.bind(
             "<Configure>",
             lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")),
+        )
+        # étire le frame de contenu à la largeur réelle du canvas quand la fenêtre change de taille
+        self.scroll_canvas.bind(
+            "<Configure>",
+            lambda e: self.scroll_canvas.itemconfig(self._content_win, width=e.width),
         )
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):   # mac/windows + linux
             self.scroll_canvas.bind_all(seq, self._on_mousewheel)
@@ -132,10 +174,12 @@ class MainWindow:
             self.scroll_canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
 
     def _fit_window(self):
-        # largeur = contenu ; hauteur plafonnée à l'écran -> le reste se scrolle
         self.content.update_idletasks()
-        w = self.content.winfo_reqwidth() + 24      # + barre de défilement
-        h = min(self.content.winfo_reqheight(), self.root.winfo_screenheight() - 120)
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        min_w = self.content.winfo_reqwidth() + 24
+        w = max(min_w, screen_w - 40)
+        h = min(self.content.winfo_reqheight(), screen_h - 120)
         self.root.geometry(f"{w}x{h}")
 
     def _build_top_row(self):
@@ -148,16 +192,36 @@ class MainWindow:
         self._build_gradient_canvas()
         self._build_mandelbrot_canvas()                    # droite
 
+    def _trap_rand_generate(self):
+        import numpy as np
+        mu    = self.trap_rand_mu.get()
+        sigma = max(1e-3, self.trap_rand_sigma.get())
+        cx = float(np.random.normal(mu, sigma))
+        cy = float(np.random.normal(mu, sigma))
+        gen = fractal.FractalGenerator(self.PREVIEW_H, self.PREVIEW_W, self.N_ITER)
+        nc = gen.pick_interesting_c()
+        self.c_re.set(round(nc.real, 4))
+        self.c_im.set(round(nc.imag, 4))
+        self.trap_cx.set(round(cx, 3))
+        self.trap_cy.set(round(cy, 3))
+        self.trap_type_var.set("point")
+        self.trap_enabled.set(True)
+        self._select_sanzo(random.randrange(len(self.sanzo_palettes)))
+        self._recompute_fractal()
+
     def _build_mandelbrot_canvas(self):
-        self.mandel_canvas = tk.Canvas(self.top_frame, width=self.PREVIEW_W, height=self.PREVIEW_H,
+        mandel_col = tk.Frame(self.top_frame)
+        mandel_col.pack(side="left", padx=(8, 0), anchor="n")
+        self.mandel_canvas = tk.Canvas(mandel_col, width=self.PREVIEW_W, height=self.PREVIEW_H,
                                        cursor="cross")
-        self.mandel_canvas.pack(side="left", padx=(8, 0), anchor="n")
+        self.mandel_canvas.pack()
         self.mandel_item = self.mandel_canvas.create_image(0, 0, anchor="nw")
         self._render_mandelbrot_base()
         # point rouge indiquant la position du c de la Julia courante
         self.mandel_dot = self.mandel_canvas.create_oval(0, 0, 0, 0, outline="red", fill="red")
         # clic sur la carte -> choisit c et recalcule la Julia
         self.mandel_canvas.bind("<Button-1>", self._on_mandel_click)
+        tk.Button(mandel_col, text="c aléatoire", command=self._c_aleatoire).pack(pady=(4, 0))
 
     def _render_mandelbrot_base(self):
         # carte de référence du plan des c : calculée une seule fois (le set ne change pas)
@@ -218,19 +282,40 @@ class MainWindow:
         ttk.Spinbox(mode_frame, from_=1, to=4, width=3, textvariable=self.ssaa,
                     command=self._recompute_fractal).pack(side="left")
 
-    def _build_sanzo_controls(self):
-        f = tk.LabelFrame(self.content, text="Combinaison Sanzo Wada")
+    def _build_tabs(self):
+        nb = ttk.Notebook(self.content)
+        nb.pack(padx=10, pady=4, fill="x")
+        tab_pal  = tk.Frame(nb)
+        tab_trap = tk.Frame(nb)
+        tab_img  = tk.Frame(nb)
+        nb.add(tab_pal,  text="  Palette  ")
+        nb.add(tab_trap, text="  Orbit Trap  ")
+        nb.add(tab_img,  text="  Trap image  ")
+        self._build_sanzo_controls(tab_pal)
+        self._build_palette_controls(tab_pal)
+        self._build_trap_controls(tab_trap)
+        self._build_img_trap_controls(tab_img)
+
+    def _build_sanzo_controls(self, parent=None):
+        if parent is None:
+            parent = self.content
+        f = tk.LabelFrame(parent, text="Combinaison Sanzo Wada")
         f.pack(padx=10, pady=4, fill="x")
-        tk.Button(f, text="◀ Précédent", command=self._sanzo_prev).pack(side="left", padx=4, pady=4)
-        tk.Label(f, textvariable=self.sanzo_label_var, width=14).pack(side="left", padx=4)
-        tk.Button(f, text="Suivant ▶", command=self._sanzo_next).pack(side="left", padx=4)
-        tk.Button(f, text="Aléatoire", command=self._sanzo_random).pack(side="left", padx=4)
+        self.sanzo_combo = ttk.Combobox(f, values=self.sanzo_names,
+                                         textvariable=self.sanzo_combo_var,
+                                         state="readonly", width=36)
+        self.sanzo_combo.pack(side="left", padx=(6, 4), pady=4)
+        self.sanzo_combo.bind("<<ComboboxSelected>>", self._on_sanzo_combo_select)
+        tk.Button(f, text="◀", command=self._sanzo_prev).pack(side="left", padx=2, pady=4)
+        tk.Button(f, text="▶", command=self._sanzo_next).pack(side="left", padx=2)
+        tk.Button(f, text="Aléatoire", command=self._sanzo_random).pack(side="left", padx=6)
+        tk.Button(f, text="⇅ Inverser", command=self._reverse_palette).pack(side="left", padx=6)
         self._update_sanzo_label()
 
-    def _build_palette_controls(self):
-        # cadre persistant : son contenu (les lignes) est reconstruit à chaque
-        # changement de combinaison, car le nombre de stops varie (2 à 4 couleurs)
-        self.pal_frame = tk.LabelFrame(self.content, text="Palette")
+    def _build_palette_controls(self, parent=None):
+        if parent is None:
+            parent = self.content
+        self.pal_frame = tk.LabelFrame(parent, text="Palette")
         self.pal_frame.pack(padx=10, pady=4, fill="x")
         self._populate_palette_rows()
 
@@ -294,11 +379,531 @@ class MainWindow:
             tk.Button(presets, text=expr, width=4,
                       command=lambda e=expr: self._set_transform(e)).pack(side="left", padx=2)
 
+    def _build_trap_controls(self, parent=None):
+        if parent is None:
+            parent = self.content
+        f = tk.LabelFrame(parent, text="Orbit Trap")
+        f.pack(padx=10, pady=4, fill="x")
+
+        body = tk.Frame(f)
+        body.pack(fill="x", padx=4, pady=4)
+
+        # — contrôles gauche —
+        left = tk.Frame(body)
+        left.pack(side="left", anchor="n")
+
+        row0 = tk.Frame(left)
+        row0.pack(fill="x", padx=6, pady=4)
+        tk.Checkbutton(row0, text="Activer", variable=self.trap_enabled,
+                       command=self._recompute_fractal).pack(side="left")
+        tk.Label(row0, text="  Forme :").pack(side="left")
+        om = ttk.OptionMenu(row0, self.trap_type_var,
+                            self.trap_type_var.get(),
+                            "point", "ligne", "croix", "cercle", "carré", "sinus")
+        om.pack(side="left", padx=4)
+        self.trap_type_var.trace_add("write", lambda *_: self._on_trap_params_change())
+
+        for label, var, from_, to_, res in (
+            ("cx",         self.trap_cx,      -2.0,  2.0,  0.01),
+            ("cy",         self.trap_cy,      -2.0,  2.0,  0.01),
+            ("angle°",     self.trap_angle,    0,    180,   1.0),
+            ("rayon/amp.", self.trap_radius,   0.0,   2.0,  0.01),
+            ("fréq.",      self.trap_freq,     0.1,  12.0,  0.1),
+            ("norm_max",   self.trap_norm_max, 0.05,  5.0,  0.05),
+        ):
+            row = tk.Frame(left)
+            row.pack(fill="x", padx=6, pady=1)
+            tk.Label(row, text=label, width=10).pack(side="left")
+            tk.Scale(row, from_=from_, to=to_, resolution=res, orient="horizontal",
+                     length=240, variable=var,
+                     command=self._on_trap_params_change).pack(side="left")
+
+        tk.Frame(left, height=6).pack()
+        tk.Button(left, text="Trap aléatoire",
+                  command=self._trap_rand_generate).pack(padx=6, pady=(0, 4), fill="x")
+        for label, var, from_, to_, res in (
+            ("μ", self.trap_rand_mu,   -2.0, 2.0, 0.05),
+            ("σ", self.trap_rand_sigma, 0.01, 2.0, 0.01),
+        ):
+            row = tk.Frame(left)
+            row.pack(fill="x", padx=6, pady=1)
+            tk.Label(row, text=label, width=10).pack(side="left")
+            tk.Scale(row, from_=from_, to=to_, resolution=res, orient="horizontal",
+                     length=240, variable=var, showvalue=True).pack(side="left")
+
+        # — aperçu plan complexe à droite —
+        cf = tk.Frame(body)
+        cf.pack(side="left", fill="both", expand=True, padx=(10, 2))
+        self.trap_shape_canvas = tk.Canvas(cf, highlightthickness=0)
+        self.trap_shape_canvas.pack(fill="both", expand=True)
+        self.trap_shape_canvas.bind("<Configure>",      lambda e: self._update_trap_shape_display())
+        self.trap_shape_canvas.bind("<Motion>",         self._trap_shape_hover)
+        self.trap_shape_canvas.bind("<ButtonPress-1>",  self._trap_shape_press)
+        self.trap_shape_canvas.bind("<B1-Motion>",      self._trap_shape_drag)
+        self.trap_shape_canvas.bind("<ButtonRelease-1>",self._trap_shape_release)
+        tk.Label(cf, text="plan  [−3, 3]", fg="#666666", font=("", 8)).pack(pady=(2, 0))
+
+        self._update_trap_shape_display()
+
+    def _on_trap_params_change(self, *_):
+        self._update_trap_shape_display()
+        self._recompute_fractal()
+
+    def _update_trap_shape_display(self):
+        if not hasattr(self, "trap_shape_canvas"):
+            return
+        c = self.trap_shape_canvas
+        W, H = c.winfo_width(), c.winfo_height()
+        if W < 2 or H < 2:
+            return
+        R = 3.0
+        scale = min(W, H) / (2 * R)
+        ox, oy = W / 2, H / 2
+        xl = ox - R * scale;  xr = ox + R * scale
+        yt = oy - R * scale;  yb = oy + R * scale
+
+        def px(re, im):
+            return ox + re * scale, oy - im * scale
+
+        c.delete("all")
+        c.create_rectangle(xl, yt, xr, yb, fill="#111111", outline="#333333")
+
+        for v in range(-2, 3):
+            if v == 0:
+                continue
+            c.create_line(ox + v * scale, yt, ox + v * scale, yb, fill="#252525")
+            c.create_line(xl, oy - v * scale, xr, oy - v * scale, fill="#252525")
+        c.create_line(xl, oy, xr, oy, fill="#555555")
+        c.create_line(ox, yt, ox, yb, fill="#555555")
+
+        t    = self.trap_type_var.get()
+        cxv  = self.trap_cx.get()
+        cyv  = self.trap_cy.get()
+        arad = math.radians(self.trap_angle.get())
+        r    = self.trap_radius.get()
+        freq = self.trap_freq.get()
+
+        if t == "point":
+            x0, y0 = px(cxv, cyv)
+            nm = self.trap_norm_max.get()
+            c.create_oval(x0 - nm * scale, y0 - nm * scale,
+                          x0 + nm * scale, y0 + nm * scale,
+                          outline="#4488ff", dash=(3, 3))
+            c.create_oval(x0 - 6, y0 - 6, x0 + 6, y0 + 6,
+                          fill="#4488ff", outline="#aaddff")
+
+        elif t == "ligne":
+            ext = R * 1.5
+            x1, y1 = px(-ext * math.cos(arad), -ext * math.sin(arad))
+            x2, y2 = px( ext * math.cos(arad),  ext * math.sin(arad))
+            c.create_line(x1, y1, x2, y2, fill="#4488ff", width=2)
+
+        elif t == "croix":
+            c.create_line(xl, oy, xr, oy, fill="#4488ff", width=2)
+            c.create_line(ox, yt, ox, yb, fill="#4488ff", width=2)
+
+        elif t == "cercle":
+            x0, y0 = px(cxv, cyv)
+            rp = r * scale
+            c.create_oval(x0 - rp, y0 - rp, x0 + rp, y0 + rp,
+                          outline="#4488ff", width=2)
+            c.create_oval(x0 - 4, y0 - 4, x0 + 4, y0 + 4, fill="#4488ff")
+
+        elif t == "carré":
+            x0, y0 = px(cxv, cyv)
+            rp = r * scale
+            c.create_rectangle(x0 - rp, y0 - rp, x0 + rp, y0 + rp,
+                                outline="#4488ff", width=2)
+            c.create_oval(x0 - 4, y0 - 4, x0 + 4, y0 + 4, fill="#4488ff")
+
+        elif t == "sinus":
+            pts = []
+            for i in range(201):
+                xre = -R + 2 * R * i / 200
+                yim = cyv + r * math.sin(freq * (xre - cxv))
+                pts.extend(px(xre, yim))
+            if len(pts) >= 4:
+                c.create_line(pts, fill="#4488ff", width=2)
+            x0, y0 = px(cxv, cyv)
+            c.create_oval(x0 - 4, y0 - 4, x0 + 4, y0 + 4, fill="#4488ff")
+
+    def _trap_shape_hover(self, event):
+        t = self.trap_type_var.get()
+        self.trap_shape_canvas.configure(
+            cursor="fleur" if t != "croix" else "")
+
+    def _trap_shape_press(self, event):
+        t = self.trap_type_var.get()
+        if t == "croix":
+            self._trap_shape_drag_start = None
+            return
+        self._trap_shape_drag_start = (event.x, event.y,
+                                        self.trap_cx.get(), self.trap_cy.get())
+
+    def _trap_shape_drag(self, event):
+        if self._trap_shape_drag_start is None:
+            return
+        c = self.trap_shape_canvas
+        W, H = c.winfo_width(), c.winfo_height()
+        scale = min(W, H) / (2 * 3.0)
+        ox, oy = W / 2, H / 2
+        mx0, my0, cx0, cy0 = self._trap_shape_drag_start
+        t = self.trap_type_var.get()
+
+        if t == "ligne":
+            mre = (event.x - ox) / scale
+            mim = -(event.y - oy) / scale
+            new_deg = math.degrees(math.atan2(mim, mre)) % 180
+            self.trap_angle.set(round(new_deg, 1))
+        else:
+            new_cx = max(-2.0, min(2.0, cx0 + (event.x - mx0) / scale))
+            new_cy = max(-2.0, min(2.0, cy0 - (event.y - my0) / scale))
+            self.trap_cx.set(round(new_cx, 3))
+            self.trap_cy.set(round(new_cy, 3))
+
+        self._update_trap_shape_display()
+
+    def _trap_shape_release(self, _event):
+        if self._trap_shape_drag_start is not None:
+            self._trap_shape_drag_start = None
+            self._recompute_fractal()
+
+    def _build_img_trap_controls(self, parent=None):
+        if parent is None:
+            parent = self.content
+        f = tk.LabelFrame(parent, text="Trap par image (PNG détouré)")
+        f.pack(padx=10, pady=4, fill="x")
+
+        body = tk.Frame(f)
+        body.pack(fill="x", padx=4, pady=4)
+
+        # — contrôles gauche (largeur naturelle) —
+        right = tk.Frame(body)
+        right.pack(side="left", anchor="n")
+
+        # — aperçu plan complexe : prend tout l'espace restant —
+        canvas_frame = tk.Frame(body)
+        canvas_frame.pack(side="left", fill="both", expand=True, padx=(10, 2))
+        self.trap_rect_canvas = tk.Canvas(canvas_frame,
+                                           highlightthickness=0)
+        self.trap_rect_canvas.pack(fill="both", expand=True)
+        self.trap_rect_canvas.bind("<Configure>",      lambda e: self._update_trap_rect_display())
+        self.trap_rect_canvas.bind("<Motion>",         self._trap_canvas_hover)
+        self.trap_rect_canvas.bind("<ButtonPress-1>",  self._trap_canvas_press)
+        self.trap_rect_canvas.bind("<B1-Motion>",      self._trap_canvas_drag)
+        self.trap_rect_canvas.bind("<ButtonRelease-1>",self._trap_canvas_release)
+        tk.Label(canvas_frame, text="plan  [−5, 5]", fg="#666666", font=("", 8)).pack(pady=(2, 0))
+
+        row0 = tk.Frame(right)
+        row0.pack(fill="x", pady=2)
+        tk.Checkbutton(row0, text="Activer", variable=self.img_trap_enabled,
+                       command=self._recompute_fractal).pack(side="left")
+        tk.Button(row0, text="Charger PNG…", command=self._load_trap_image).pack(side="left", padx=8)
+        tk.Label(row0, textvariable=self.img_trap_path_var, anchor="w").pack(side="left")
+
+        for label, var in (("Re min", self.img_trap_re_min), ("Re max", self.img_trap_re_max),
+                           ("Im min", self.img_trap_im_min), ("Im max", self.img_trap_im_max)):
+            row = tk.Frame(right)
+            row.pack(fill="x", pady=1)
+            tk.Label(row, text=label, width=8).pack(side="left")
+            tk.Scale(row, from_=-5.0, to=5.0, resolution=0.05, orient="horizontal",
+                     length=240, variable=var,
+                     command=self._on_img_rect_change).pack(side="left")
+
+        row_ang = tk.Frame(right)
+        row_ang.pack(fill="x", pady=1)
+        tk.Label(row_ang, text="rotation°", width=8).pack(side="left")
+        tk.Scale(row_ang, from_=-180, to=180, resolution=1, orient="horizontal",
+                 length=240, variable=self.img_trap_angle_deg,
+                 command=self._on_img_rect_change).pack(side="left")
+
+        row_bot = tk.Frame(right)
+        row_bot.pack(fill="x", pady=(2, 4))
+        tk.Label(row_bot, text="min iter").pack(side="left")
+        ttk.Spinbox(row_bot, from_=0, to=20, width=4,
+                    textvariable=self.img_trap_min_iter,
+                    command=self._recompute_fractal).pack(side="left", padx=(2, 12))
+        tk.Checkbutton(row_bot, text="Lissage sortie",
+                       variable=self.img_smooth_var,
+                       command=self._on_img_smooth_toggle).pack(side="left")
+
+        self._update_trap_rect_display()
+
+    def _on_img_rect_change(self, *_):
+        self._update_trap_rect_display()
+        self._recompute_fractal()
+
+    def _update_trap_rect_display(self):
+        if not hasattr(self, "trap_rect_canvas"):
+            return
+        c = self.trap_rect_canvas
+        W = c.winfo_width()
+        H = c.winfo_height()
+        if W < 2 or H < 2:
+            return
+        R = 5.0  # plan affiché : [-R, R] × [-R, R]
+
+        # échelle uniforme : 1 unité Re = 1 unité Im
+        scale = min(W, H) / (2 * R)
+        ox, oy = W / 2, H / 2  # origine (0+0j) au centre du canvas
+
+        def px(re, im):
+            return ox + re * scale, oy - im * scale
+
+        # bornes pixel de la zone de coordonnées
+        xl, xr = ox - R * scale, ox + R * scale
+        yt, yb = oy - R * scale, oy + R * scale
+
+        c.delete("all")
+
+        # fond sombre limité au carré de coordonnées (pas de noir hors zone)
+        c.create_rectangle(xl, yt, xr, yb, fill="#111111", outline="#333333")
+
+        # grille entière très discrète
+        for v in range(-4, 5):
+            if v == 0:
+                continue
+            c.create_line(ox + v * scale, yt, ox + v * scale, yb, fill="#252525")
+            c.create_line(xl, oy - v * scale, xr, oy - v * scale, fill="#252525")
+
+        # axes Re = 0 et Im = 0
+        c.create_line(xl, oy, xr, oy, fill="#555555")
+        c.create_line(ox, yt, ox, yb, fill="#555555")
+
+        # rectangle de la vue Julia (borne = 2)
+        by = self.BORNE * self.PREVIEW_H / self.PREVIEW_W
+        x1, y1 = px(-self.BORNE, by)
+        x2, y2 = px(self.BORNE, -by)
+        c.create_rectangle(x1, y1, x2, y2, outline="#888888", width=1)
+
+        # rectangle du trap image — avec rotation
+        re_min = self.img_trap_re_min.get()
+        re_max = self.img_trap_re_max.get()
+        im_min = self.img_trap_im_min.get()
+        im_max = self.img_trap_im_max.get()
+        angle_rad = math.radians(self.img_trap_angle_deg.get())
+        re_c = (re_min + re_max) / 2
+        im_c = (im_min + im_max) / 2
+        rw = re_max - re_min
+        rh = im_max - im_min
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+
+        def rot(lre, lim):
+            return px(re_c + lre * cos_a - lim * sin_a,
+                      im_c + lre * sin_a + lim * cos_a)
+
+        corners = [rot(-rw/2,  rh/2), rot( rw/2,  rh/2),
+                   rot( rw/2, -rh/2), rot(-rw/2, -rh/2)]
+
+        # miniature PIL rotée au centre
+        if self.img_trap_pil is not None:
+            dw_local = max(1, int(round(rw * scale)))
+            dh_local = max(1, int(round(rh * scale)))
+            thumb = self.img_trap_pil.resize((dw_local, dh_local), Image.LANCZOS)
+            thumb_r = thumb.rotate(math.degrees(angle_rad), expand=True,
+                                   resample=Image.BICUBIC)
+            self._trap_canvas_thumb = ImageTk.PhotoImage(thumb_r)
+            cxp, cyp = px(re_c, im_c)
+            c.create_image(int(cxp), int(cyp), image=self._trap_canvas_thumb, anchor="center")
+
+        # contour du polygone rotatif
+        pts = [v for pt in corners for v in pt]
+        c.create_polygon(pts, fill="", outline="#4488ff", width=2)
+
+        # poignées de coin
+        hr = 5
+        for hx, hy in corners:
+            c.create_rectangle(hx - hr, hy - hr, hx + hr, hy + hr,
+                                fill="#4488ff", outline="#aaddff")
+
+        # poignée de rotation (cercle orange au-dessus du bord supérieur)
+        margin = 20 / scale
+        h_re = re_c - (rh / 2 + margin) * sin_a
+        h_im = im_c + (rh / 2 + margin) * cos_a
+        tm_re = re_c - (rh / 2) * sin_a
+        tm_im = im_c + (rh / 2) * cos_a
+        hx, hy = px(h_re, h_im)
+        tmx, tmy = px(tm_re, tm_im)
+        c.create_line(tmx, tmy, hx, hy, fill="#4488ff", dash=(3, 3))
+        c.create_oval(hx - 7, hy - 7, hx + 7, hy + 7, fill="#ff8844", outline="#ffcc88")
+
+    # ---- helpers drag/resize du canvas ---------------------------------- #
+
+    def _trap_canvas_transform(self):
+        """Retourne (ox, oy, scale) : mapping plan complexe ↔ canvas."""
+        c = self.trap_rect_canvas
+        W, H = c.winfo_width(), c.winfo_height()
+        scale = min(W, H) / (2 * 5.0)
+        return W / 2, H / 2, scale
+
+    def _trap_aspect_ratio(self):
+        if self.img_trap_pil is not None:
+            w, h = self.img_trap_pil.size
+            return w / h
+        re_w = self.img_trap_re_max.get() - self.img_trap_re_min.get()
+        im_h = self.img_trap_im_max.get() - self.img_trap_im_min.get()
+        return re_w / im_h if im_h > 0 else 1.0
+
+    def _trap_canvas_hit_test(self, cx, cy):
+        """Renvoie "rotate", "move", "resize_XX" ou None selon la position."""
+        ox, oy, scale = self._trap_canvas_transform()
+        rm = self.img_trap_re_min.get(); rx = self.img_trap_re_max.get()
+        im = self.img_trap_im_min.get(); ix = self.img_trap_im_max.get()
+        angle_rad = math.radians(self.img_trap_angle_deg.get())
+        re_c = (rm + rx) / 2;  im_c = (im + ix) / 2
+        rw = rx - rm;          rh = ix - im
+        cos_a = math.cos(angle_rad); sin_a = math.sin(angle_rad)
+        tol = 10
+
+        def ppx(re, imp): return ox + re * scale, oy - imp * scale
+        def rot(lre, lim):
+            return ppx(re_c + lre * cos_a - lim * sin_a,
+                       im_c + lre * sin_a + lim * cos_a)
+
+        # poignée de rotation
+        margin = 20 / scale
+        hx, hy = ppx(re_c - (rh / 2 + margin) * sin_a,
+                     im_c + (rh / 2 + margin) * cos_a)
+        if (cx - hx) ** 2 + (cy - hy) ** 2 < 64:
+            return "rotate"
+
+        # coins
+        corners = {"nw": rot(-rw/2, rh/2), "ne": rot(rw/2, rh/2),
+                   "sw": rot(-rw/2, -rh/2), "se": rot(rw/2, -rh/2)}
+        for name, (px0, py0) in corners.items():
+            if abs(cx - px0) < tol and abs(cy - py0) < tol:
+                return f"resize_{name}"
+
+        # intérieur (test en coordonnées locales)
+        mouse_re = (cx - ox) / scale
+        mouse_im = -(cy - oy) / scale
+        dre = mouse_re - re_c;  dim = mouse_im - im_c
+        local_re = dre * cos_a + dim * sin_a
+        local_im = -dre * sin_a + dim * cos_a
+        if -rw/2 <= local_re <= rw/2 and -rh/2 <= local_im <= rh/2:
+            return "move"
+        return None
+
+    def _trap_canvas_hover(self, event):
+        cursors = {"move": "fleur", "rotate": "exchange",
+                   "resize_nw": "top_left_corner", "resize_ne": "top_right_corner",
+                   "resize_sw": "bottom_left_corner", "resize_se": "bottom_right_corner"}
+        mode = self._trap_canvas_hit_test(event.x, event.y)
+        self.trap_rect_canvas.configure(cursor=cursors.get(mode, ""))
+
+    def _trap_canvas_press(self, event):
+        mode = self._trap_canvas_hit_test(event.x, event.y)
+        if mode is None:
+            self._trap_drag_mode = None
+            return
+        self._trap_drag_mode = mode
+        rm, rx = self.img_trap_re_min.get(), self.img_trap_re_max.get()
+        im, ix = self.img_trap_im_min.get(), self.img_trap_im_max.get()
+        self._trap_drag_start = (event.x, event.y, rm, rx, im, ix)
+        self._trap_drag_anchor = {
+            "resize_nw": (rx, im), "resize_ne": (rm, im),
+            "resize_sw": (rx, ix), "resize_se": (rm, ix),
+        }.get(mode, (0.0, 0.0))
+
+    def _trap_canvas_drag(self, event):
+        if self._trap_drag_mode is None or self._trap_drag_start is None:
+            return
+        ox, oy, scale = self._trap_canvas_transform()
+        mx0, my0, rm0, rx0, im0, ix0 = self._trap_drag_start
+
+        if self._trap_drag_mode == "rotate":
+            re_c = (rm0 + rx0) / 2
+            im_c = (im0 + ix0) / 2
+            mouse_re = (event.x - ox) / scale
+            mouse_im = -(event.y - oy) / scale
+            new_angle = math.atan2(-(mouse_re - re_c), mouse_im - im_c)
+            self.img_trap_angle_deg.set(round(math.degrees(new_angle), 1))
+        elif self._trap_drag_mode == "move":
+            d_re = (event.x - mx0) / scale
+            d_im = -(event.y - my0) / scale
+            w, h = rx0 - rm0, ix0 - im0
+            new_rm = max(-5.0, min(5.0 - w, rm0 + d_re))
+            new_im = max(-5.0, min(5.0 - h, im0 + d_im))
+            self.img_trap_re_min.set(round(new_rm, 3))
+            self.img_trap_re_max.set(round(new_rm + w, 3))
+            self.img_trap_im_min.set(round(new_im, 3))
+            self.img_trap_im_max.set(round(new_im + h, 3))
+        else:
+            ar = self._trap_aspect_ratio()
+            anc_re, anc_im = self._trap_drag_anchor
+            drag_re = (event.x - ox) / scale
+            if self._trap_drag_mode in ("resize_ne", "resize_se"):
+                new_w = max(0.05, drag_re - anc_re)
+            else:
+                new_w = max(0.05, anc_re - drag_re)
+            new_h = new_w / ar
+            if self._trap_drag_mode == "resize_se":
+                rm, rx, im, ix = anc_re, anc_re + new_w, anc_im - new_h, anc_im
+            elif self._trap_drag_mode == "resize_nw":
+                rm, rx, im, ix = anc_re - new_w, anc_re, anc_im, anc_im + new_h
+            elif self._trap_drag_mode == "resize_ne":
+                rm, rx, im, ix = anc_re, anc_re + new_w, anc_im, anc_im + new_h
+            else:  # sw
+                rm, rx, im, ix = anc_re - new_w, anc_re, anc_im - new_h, anc_im
+            self.img_trap_re_min.set(round(rm, 3))
+            self.img_trap_re_max.set(round(rx, 3))
+            self.img_trap_im_min.set(round(im, 3))
+            self.img_trap_im_max.set(round(ix, 3))
+
+        self._update_trap_rect_display()
+
+    def _trap_canvas_release(self, _event):
+        if self._trap_drag_mode is not None:
+            self._trap_drag_mode = None
+            self._trap_drag_start = None
+            self._recompute_fractal()
+
+    # ---------------------------------------------------------------------- #
+
+    def _load_trap_image_path(self, path: str):
+        img = Image.open(path).convert("RGBA")
+        self.img_trap_pil = img
+        self.img_trap_tex = np.array(img, dtype=np.uint8)
+        name = Path(path).name
+        self.img_trap_path_var.set(name[:40] + ("…" if len(name) > 40 else ""))
+        self._update_trap_rect_display()
+        if self.img_trap_enabled.get():
+            self._recompute_fractal()
+
+    def _load_trap_image(self):
+        path = filedialog.askopenfilename(
+            title="Charger une image avec transparence",
+            filetypes=[("PNG", "*.png"), ("Tous les fichiers", "*.*")])
+        if not path:
+            return
+        self._load_trap_image_path(path)
+
+    def _img_trap_rect(self) -> np.ndarray:
+        return np.array([self.img_trap_re_min.get(), self.img_trap_re_max.get(),
+                         self.img_trap_im_min.get(), self.img_trap_im_max.get()])
+
+    def _composite_img_trap(self):
+        """Composite self.img_rgba avec la couleur de fond de la palette; applique le lissage."""
+        if self.img_rgba is None:
+            return
+        bg = np.array(self.palette[1][0], dtype=np.uint8)
+        rgb = self.img_rgba[:, :, :3].copy()
+        rgb[self.img_rgba[:, :, 3] == 0] = bg
+        if self.img_smooth_var.get():
+            rgb = np.array(Image.fromarray(rgb).filter(ImageFilter.SMOOTH))
+        self.img_preview = rgb
+
+    def _on_img_smooth_toggle(self):
+        if self.img_rgba is not None:
+            self._composite_img_trap()
+            self._redraw_fractal()
+        # si pas encore de calcul, rien à faire
+
     def _build_buttons(self):
         btns = tk.Frame(self.content)
         btns.pack(pady=8)
         tk.Button(btns, text="Régénérer", command=self._recompute_fractal).pack(side="left", padx=4)
-        tk.Button(btns, text="c aléatoire", command=self._c_aleatoire).pack(side="left", padx=4)
         tk.Button(btns, text="Exporter en HD", command=self._export_hd).pack(side="left", padx=4)
 
     # ------------------------------------------------------------------ #
@@ -381,7 +986,13 @@ class MainWindow:
     #  Navigation des combinaisons Sanzo Wada
     # ------------------------------------------------------------------ #
     def _update_sanzo_label(self):
-        self.sanzo_label_var.set(f"Combo {self.sanzo_index + 1} / {len(self.sanzo_palettes)}")
+        n = len(self.sanzo_palettes)
+        self.sanzo_label_var.set(f"{self.sanzo_index} / {n - 1}")
+        self.sanzo_combo_var.set(self.sanzo_names[self.sanzo_index])
+
+    def _on_sanzo_combo_select(self, *_):
+        name = self.sanzo_combo_var.get()
+        self._select_sanzo(self.sanzo_names.index(name))
 
     def _select_sanzo(self, index: int):
         self.sanzo_index = index % len(self.sanzo_palettes)
@@ -399,6 +1010,15 @@ class MainWindow:
     def _sanzo_random(self):
         self._select_sanzo(random.randrange(len(self.sanzo_palettes)))
 
+    def _reverse_palette(self):
+        pos = self.palette[0]
+        col = self.palette[1]
+        n = len(pos)
+        self.palette[0] = [1.0 - pos[n - 1 - i] for i in range(n)]
+        self.palette[1] = list(reversed(col))
+        self._populate_palette_rows()
+        self._apply_palette()
+
     # ------------------------------------------------------------------ #
     #  Rendu
     # ------------------------------------------------------------------ #
@@ -406,19 +1026,63 @@ class MainWindow:
         # le mode bandes a besoin du champ classique (comptes d'itérations entiers)
         return False if self.cyclic_var.get() else self.smooth_var.get()
 
+    def _trap_params_now(self):
+        t = self.trap_type_var.get()
+        if t == "sinus":
+            trap_type = 5
+            params = np.array([self.trap_cx.get(), self.trap_cy.get(),
+                               self.trap_radius.get(), self.trap_freq.get()])
+        elif t in ("cercle", "carré"):
+            trap_type = {"cercle": 3, "carré": 4}[t]
+            params = np.array([self.trap_cx.get(), self.trap_cy.get(),
+                               self.trap_radius.get()])
+        else:
+            trap_type = {"point": 0, "ligne": 1, "croix": 2}[t]
+            params = np.array([self.trap_cx.get(), self.trap_cy.get(),
+                               math.radians(self.trap_angle.get())])
+        return trap_type, params
+
     def _recompute_fractal(self, *_):
         k = self._ssaa_factor()
         gen = fractal.FractalGenerator(self.PREVIEW_H * k, self.PREVIEW_W * k, self.N_ITER,
                                        smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
-        self.V_preview = render.downscale_field(gen.generate_julia(poly), k)
+        if self.img_trap_enabled.get() and self.img_trap_tex is not None:
+            rect = self._img_trap_rect()
+            rgba_hi = gen.generate_julia_image_trap(
+                poly, self.img_trap_tex, rect,
+                min_iter=self.img_trap_min_iter.get(),
+                angle=math.radians(self.img_trap_angle_deg.get()))
+            if k > 1:
+                pil = Image.fromarray(rgba_hi).resize(
+                    (self.PREVIEW_W, self.PREVIEW_H), Image.LANCZOS)
+                self.img_rgba = np.array(pil)
+            else:
+                self.img_rgba = rgba_hi
+            self.V_preview = None
+            self.img_preview = None
+            self._composite_img_trap()
+        elif self.trap_enabled.get():
+            trap_type, trap_params = self._trap_params_now()
+            V = gen.generate_julia_trap(poly, trap_type, trap_params,
+                                        norm_max=self.trap_norm_max.get())
+            self.img_rgba = None
+            self.img_preview = None
+            self.V_preview = render.downscale_field(V, k)
+        else:
+            self.img_rgba = None
+            self.img_preview = None
+            self.V_preview = render.downscale_field(gen.generate_julia(poly), k)
         self._redraw_fractal()
 
     def _redraw_fractal(self):
-        if self.V_preview is None:
+        if self.img_preview is not None:
+            arr = self.img_preview
+        elif self.V_preview is not None:
+            arr = self._coloriser(self.V_preview)
+        else:
             return
-        C = self._coloriser(self.V_preview)
-        photo = ImageTk.PhotoImage(Image.fromarray(C))
+        photo = ImageTk.PhotoImage(Image.fromarray(arr.astype(np.uint8)))
         self.fractal_canvas.itemconfig(self.fractal_item, image=photo)
         self.fractal_canvas.image = photo
 
@@ -430,6 +1094,8 @@ class MainWindow:
 
     def _apply_palette(self):
         self._update_gradient()
+        if self.img_rgba is not None:
+            self._composite_img_trap()   # re-composite avec la nouvelle couleur de fond
         self._redraw_fractal()
 
     def _c_aleatoire(self):
@@ -444,7 +1110,31 @@ class MainWindow:
         gen = fractal.FractalGenerator(self.FULL_H * k, self.FULL_W * k, self.N_ITER,
                                        smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
-        V_full = render.downscale_field(gen.generate_julia(poly), k)
+        if self.img_trap_enabled.get() and self.img_trap_tex is not None:
+            rect = self._img_trap_rect()
+            rgba_hi = gen.generate_julia_image_trap(
+                poly, self.img_trap_tex, rect,
+                min_iter=self.img_trap_min_iter.get(),
+                angle=math.radians(self.img_trap_angle_deg.get()))
+            if k > 1:
+                pil = Image.fromarray(rgba_hi).resize(
+                    (self.FULL_W, self.FULL_H), Image.LANCZOS)
+                rgba = np.array(pil)
+            else:
+                rgba = rgba_hi
+            bg = np.array(self.palette[1][0], dtype=np.uint8)
+            rgb = rgba[:, :, :3].copy()
+            rgb[rgba[:, :, 3] == 0] = bg
+            if self.img_smooth_var.get():
+                rgb = np.array(Image.fromarray(rgb).filter(ImageFilter.SMOOTH))
+            return rgb
+        elif self.trap_enabled.get():
+            trap_type, trap_params = self._trap_params_now()
+            V_full = render.downscale_field(
+                gen.generate_julia_trap(poly, trap_type, trap_params,
+                                        norm_max=self.trap_norm_max.get()), k)
+        else:
+            V_full = render.downscale_field(gen.generate_julia(poly), k)
         return self._coloriser(V_full)
 
     def _show_hd_popup(self, *_):
