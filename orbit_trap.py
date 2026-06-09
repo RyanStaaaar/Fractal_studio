@@ -183,8 +183,10 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
     """Geometric-series image trap for Julia sets.
 
     Places N copies of tex in the complex plane: copy k has width base_size*r^k
-    and is rotated by k*angle_step radians relative to copy 0. Center of copy 0
-    is (cx, cy). First hit across all copies and all orbit steps wins.
+    and its centre is displaced from (cx, cy) by base_size*r^k in direction
+    k*angle_step (using sin/1-cos so that angle_step=0 keeps all copies
+    colocated at (cx, cy) and increasing angle spreads them in a spiral).
+    First hit across all copies and all orbit steps wins.
     Untrapped pixels have alpha=0.
 
     Returns uint8 (H, W, 4) RGBA.
@@ -197,16 +199,20 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
     TH, TW = tex.shape[0], tex.shape[1]
     aspect = float(TH) / float(TW)  # height / width — preserves image proportions
 
-    # Precompute per-copy scale and rotation (single-threaded, before prange)
+    # Precompute per-copy scale and centre position (single-threaded, before prange).
+    # cx_ks[k] = cx + base_size*r^k * sin(k*angle_step)
+    # cy_ks[k] = cy + base_size*r^k * (1 - cos(k*angle_step))
+    # This ensures copies stay colocated at (cx,cy) when angle_step=0 and
+    # spiral outward as angle_step increases — making rotation visually obvious.
     scales = np.empty(N, dtype=np.float64)
-    cos_ks = np.empty(N, dtype=np.float64)
-    sin_ks = np.empty(N, dtype=np.float64)
+    cx_ks  = np.empty(N, dtype=np.float64)
+    cy_ks  = np.empty(N, dtype=np.float64)
     sc = 1.0
     for k in range(N):
         scales[k] = sc
         ang = float(k) * angle_step
-        cos_ks[k] = math.cos(ang)
-        sin_ks[k] = math.sin(ang)
+        cx_ks[k] = cx + base_size * sc * math.sin(ang)
+        cy_ks[k] = cy + base_size * sc * (1.0 - math.cos(ang))
         sc *= r
 
     out = np.zeros((H, W, 4), dtype=np.uint8)
@@ -222,19 +228,14 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
                 zi = z.imag
                 for k in range(N):
                     sc_k = scales[k]
-                    ck = cos_ks[k]
-                    sk = sin_ks[k]
-                    # Translate to copy-0 center then rotate into copy-k local frame
-                    dre = zr - cx
-                    dim = zi - cy
-                    local_re =  ck * dre + sk * dim
-                    local_im = -sk * dre + ck * dim
-                    # Half-extents of copy k
+                    # Axis-aligned rect centred at copy k's displaced position
+                    dre = zr - cx_ks[k]
+                    dim = zi - cy_ks[k]
                     hw = base_size * sc_k * 0.5
                     hh = base_size * sc_k * aspect * 0.5
-                    if -hw <= local_re <= hw and -hh <= local_im <= hh:
-                        u = (local_re + hw) / (base_size * sc_k)
-                        v = (hh - local_im) / (base_size * sc_k * aspect)
+                    if -hw <= dre <= hw and -hh <= dim <= hh:
+                        u = (dre + hw) / (base_size * sc_k)
+                        v = (hh - dim) / (base_size * sc_k * aspect)
                         tj = int(math.floor(u * float(TW - 1) + 0.5))
                         ti = int(math.floor(v * float(TH - 1) + 0.5))
                         if 0 <= ti < TH and 0 <= tj < TW:

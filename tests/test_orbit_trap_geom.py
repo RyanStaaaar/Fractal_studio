@@ -50,6 +50,22 @@ def test_transparent_tex_pixels_not_trapped():
     assert np.all(out[:, :, 3] == 0), "Transparent tex pixels must not produce hits"
 
 
+def test_rotation_displaces_copies():
+    """angle_step > 0 must produce a different result than angle_step=0."""
+    from orbit_trap import trap_image_geom_series_julia
+    H, W = 16, 16
+    xs = np.linspace(-1.5, 1.5, W)
+    ys = np.linspace(-1.5, 1.5, H)
+    X, Y = np.meshgrid(xs, ys)
+    Z = X + 1j * Y
+    img = _make_tex(r=200, g=100, b=50, alpha=255, size=8)
+    common = dict(a=1+0j, b=0+0j, c=-0.4+0.6j, tex=img,
+                  N=4, r=0.6, cx=0.0, cy=0.0, base_size=2.0, n=50, B=256.0)
+    out0 = trap_image_geom_series_julia(Z, **common, angle_step=0.0)
+    out1 = trap_image_geom_series_julia(Z, **common, angle_step=1.0)
+    assert not np.array_equal(out0, out1), "angle_step=1.0 must produce a different output than angle_step=0"
+
+
 def test_large_trap_produces_hits():
     """With a very large base_size, orbit points land inside and should be trapped."""
     from orbit_trap import trap_image_geom_series_julia
