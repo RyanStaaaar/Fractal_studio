@@ -46,6 +46,14 @@ HEADERS    = ["palette_index", "name", "perm_index", "color_order", "mirror", "v
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _lighten(hex_color: str, amount: int = 30) -> str:
+    """Éclaircit légèrement une couleur hex pour l'effet hover."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return "#{:02x}{:02x}{:02x}".format(
+        min(255, r + amount), min(255, g + amount), min(255, b + amount))
+
+
 def _all_perms(colors: list) -> list[list]:
     return [list(p) for p in itertools.permutations(colors)]
 
@@ -160,6 +168,18 @@ class PaletteCalibrator:
         self.root.bind("<Left>",   lambda _e: self._prev_palette())
         self.root.bind("<space>",  lambda _e: self._randomize())
 
+    # ── Helpers UI ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _btn(parent, text, cmd, bg, fg="white", font=("Helvetica", 10), padx=8, pady=3):
+        """Label utilisé comme bouton — les couleurs sont toujours respectées sur macOS."""
+        lbl = tk.Label(parent, text=text, bg=bg, fg=fg, font=font,
+                       padx=padx, pady=pady, cursor="hand2")
+        lbl.bind("<Button-1>", lambda _e: cmd())
+        lbl.bind("<Enter>",    lambda _e: lbl.config(bg=_lighten(bg)))
+        lbl.bind("<Leave>",    lambda _e: lbl.config(bg=bg))
+        return lbl
+
     # ── Construction de l'UI ──────────────────────────────────────────────────
 
     def _build_ui(self):
@@ -169,16 +189,12 @@ class PaletteCalibrator:
         nav = tk.Frame(self.root, bg=BG)
         nav.pack(fill="x", padx=10, pady=(8, 0))
 
-        tk.Button(nav, text="← Palette", command=self._prev_palette,
-                  bg="#333", fg="white", relief="flat", padx=6).pack(side="left", padx=2)
-        tk.Button(nav, text="Palette →", command=self._next_palette,
-                  bg="#333", fg="white", relief="flat", padx=6).pack(side="left", padx=2)
-        tk.Button(nav, text="Next →",    command=self._next_step,
-                  bg="#3a5f8a", fg="white", relief="flat", padx=8,
+        self._btn(nav, "← Palette",       self._prev_palette, "#3a3a3a").pack(side="left", padx=2)
+        self._btn(nav, "Palette →",       self._next_palette, "#3a3a3a").pack(side="left", padx=2)
+        self._btn(nav, "Next →",          self._next_step,    "#2a5070",
                   font=("Helvetica", 10, "bold")).pack(side="left", padx=6)
-        tk.Button(nav, text="⇄ Aléatoire", command=self._randomize,
-                  bg="#5a4a1e", fg="#f5d078", relief="flat",
-                  padx=6).pack(side="left", padx=2)
+        self._btn(nav, "⇄ Aléatoire",    self._randomize,    "#4a3a10",
+                  fg="#f5d078").pack(side="left", padx=2)
 
         self._nav_label = tk.Label(nav, text="", bg=BG, fg="#bbb",
                                     font=("Helvetica", 11))
@@ -188,9 +204,8 @@ class PaletteCalibrator:
                                        font=("Helvetica", 10))
         self._status_label.pack(side="right", padx=10)
 
-        tk.Button(nav, text="✓  Valider & Suivant", command=self._validate,
-                  bg="#2a7a2a", fg="white", font=("Helvetica", 11, "bold"),
-                  relief="flat", padx=10).pack(side="right", padx=6)
+        self._btn(nav, "✓  Valider & Suivant", self._validate, "#1e6020",
+                  font=("Helvetica", 11, "bold"), padx=12).pack(side="right", padx=6)
 
         # Barre infos fractale + progression
         info = tk.Frame(self.root, bg=BG)
