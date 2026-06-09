@@ -200,17 +200,17 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
     aspect = float(TH) / float(TW)  # height / width — preserves image proportions
 
     # Precompute per-copy scale and centre position (single-threaded, before prange).
-    # cx_ks[k] = cx + base_size*r^k * sin(k*angle_step)
-    # cy_ks[k] = cy + base_size*r^k * (1 - cos(k*angle_step))
-    # This ensures copies stay colocated at (cx,cy) when angle_step=0 and
-    # spiral outward as angle_step increases — making rotation visually obvious.
+    # cx_ks[k] = cx + base_size*r^k * sin((k+1)*angle_step)
+    # cy_ks[k] = cy + base_size*r^k * (1 - cos((k+1)*angle_step))
+    # Using (k+1) so ALL copies (including k=0) are displaced when angle_step>0.
+    # Still colocated at (cx,cy) when angle_step=0 because sin(0)=0 and 1-cos(0)=0.
     scales = np.empty(N, dtype=np.float64)
     cx_ks  = np.empty(N, dtype=np.float64)
     cy_ks  = np.empty(N, dtype=np.float64)
     sc = 1.0
     for k in range(N):
         scales[k] = sc
-        ang = float(k) * angle_step
+        ang = float(k + 1) * angle_step
         cx_ks[k] = cx + base_size * sc * math.sin(ang)
         cy_ks[k] = cy + base_size * sc * (1.0 - math.cos(ang))
         sc *= r
