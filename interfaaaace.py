@@ -74,7 +74,8 @@ class MainWindow:
         self.trap_geom_cx     = tk.DoubleVar(value=0.0)
         self.trap_geom_cy     = tk.DoubleVar(value=0.0)
         self.trap_geom_angle  = tk.DoubleVar(value=0.0)   # degrés
-        self._img_geom_active = False  # tells _composite_img_trap to use black bg
+        self.trap_geom_bg     = tk.StringVar(value="#000000")  # fond en mode geom (hex)
+        self._img_geom_active = False  # tells _composite_img_trap to use geom bg
         self.img_smooth_var    = tk.BooleanVar(value=False)
         self.img_rgba          = None          # RGBA brut du noyau Numba (alpha=0 → non piégé)
         self.img_preview       = None          # RGB composité prêt à l'affichage
@@ -692,7 +693,7 @@ class MainWindow:
             ("Taille base",     self.trap_geom_size,  0.1,  4.0,  0.05),
             ("Centre X",        self.trap_geom_cx,   -2.0,  2.0,  0.05),
             ("Centre Y",        self.trap_geom_cy,   -2.0,  2.0,  0.05),
-            ("Rotation/copie°", self.trap_geom_angle, 0,    90,   5),
+            ("Rotation/copie°", self.trap_geom_angle, 0,    360,  5),
         ]
         for label, var, lo, hi, res in geom_sliders:
             row = tk.Frame(parent)
@@ -701,6 +702,14 @@ class MainWindow:
             tk.Scale(row, from_=lo, to=hi, resolution=res, orient="horizontal",
                      length=220, variable=var,
                      command=self._recompute_fractal).pack(side="left")
+        # Colour picker for the background
+        bg_row = tk.Frame(parent)
+        bg_row.pack(fill="x", padx=6, pady=(2, 0))
+        tk.Label(bg_row, text="Fond", width=14, anchor="w").pack(side="left")
+        self._geom_bg_btn = tk.Button(bg_row, width=4,
+                                       bg=self.trap_geom_bg.get(),
+                                       command=self._pick_geom_bg)
+        self._geom_bg_btn.pack(side="left")
 
     def _on_img_trap_mode_change(self):
         if self.img_trap_mode.get() == "geom":
@@ -710,6 +719,15 @@ class MainWindow:
             self._img_geom_frame.pack_forget()
             self._img_classic_frame.pack(fill="x")
         self._recompute_fractal()
+
+    def _pick_geom_bg(self):
+        from tkinter import colorchooser
+        result = colorchooser.askcolor(color=self.trap_geom_bg.get(),
+                                       title="Couleur de fond (mode géométrique)")
+        if result[1]:
+            self.trap_geom_bg.set(result[1])
+            self._geom_bg_btn.configure(bg=result[1])
+            self._recompute_fractal()
 
     def _on_img_rect_change(self, *_):
         self._update_trap_rect_display()
@@ -961,6 +979,10 @@ class MainWindow:
             return
         self._load_trap_image_path(path)
 
+    def _hex_to_rgb(self, hex_color: str) -> np.ndarray:
+        h = hex_color.lstrip("#")
+        return np.array([int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)], dtype=np.uint8)
+
     def _img_trap_rect(self) -> np.ndarray:
         return np.array([self.img_trap_re_min.get(), self.img_trap_re_max.get(),
                          self.img_trap_im_min.get(), self.img_trap_im_max.get()])
@@ -970,7 +992,7 @@ class MainWindow:
         if self.img_rgba is None:
             return
         if self._img_geom_active:
-            bg = np.zeros(3, dtype=np.uint8)          # geom mode: black background
+            bg = self._hex_to_rgb(self.trap_geom_bg.get())
         else:
             bg = np.array(self.palette[1][0], dtype=np.uint8)
         rgb = self.img_rgba[:, :, :3].copy()
@@ -1230,7 +1252,7 @@ class MainWindow:
                     cy=self.trap_geom_cy.get(),
                     base_size=self.trap_geom_size.get(),
                     angle_step=math.radians(self.trap_geom_angle.get()))
-                bg = np.zeros(3, dtype=np.uint8)  # black background for geom mode
+                bg = self._hex_to_rgb(self.trap_geom_bg.get())
             else:
                 rect = self._img_trap_rect()
                 rgba_hi = gen.generate_julia_image_trap(
