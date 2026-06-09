@@ -66,6 +66,15 @@ class MainWindow:
         self.img_trap_im_min   = tk.DoubleVar(value=-2.0)
         self.img_trap_im_max   = tk.DoubleVar(value=2.0)
         self.img_trap_min_iter = tk.IntVar(value=2)
+        # --- geometric series image trap ---
+        self.img_trap_mode    = tk.StringVar(value="classique")  # "classique" | "geom"
+        self.trap_geom_N      = tk.IntVar(value=4)
+        self.trap_geom_r      = tk.DoubleVar(value=0.5)
+        self.trap_geom_size   = tk.DoubleVar(value=1.0)
+        self.trap_geom_cx     = tk.DoubleVar(value=0.0)
+        self.trap_geom_cy     = tk.DoubleVar(value=0.0)
+        self.trap_geom_angle  = tk.DoubleVar(value=0.0)   # degrés
+        self._img_geom_active = False  # tells _composite_img_trap to use black bg
         self.img_smooth_var    = tk.BooleanVar(value=False)
         self.img_rgba          = None          # RGBA brut du noyau Numba (alpha=0 → non piégé)
         self.img_preview       = None          # RGB composité prêt à l'affichage
@@ -77,6 +86,11 @@ class MainWindow:
         self._trap_drag_anchor = (0.0, 0.0)    # coin fixe lors d'un resize
         self.trap_rand_mu    = tk.DoubleVar(value=0.0)
         self.trap_rand_sigma = tk.DoubleVar(value=0.5)
+
+        # interior coloring
+        self.coloring_mode  = tk.StringVar(value="escape")
+        self.attractor_norm = tk.DoubleVar(value=0.5)
+        self.lambda_burn_in = tk.IntVar(value=100)
 
         # orbit trap
         self.trap_enabled  = tk.BooleanVar(value=False)
@@ -292,6 +306,7 @@ class MainWindow:
         nb.add(tab_trap, text="  Orbit Trap  ")
         nb.add(tab_img,  text="  Trap image  ")
         self._build_sanzo_controls(tab_pal)
+        self._build_interior_controls(tab_pal)
         self._build_palette_controls(tab_pal)
         self._build_trap_controls(tab_trap)
         self._build_img_trap_controls(tab_img)
@@ -311,6 +326,28 @@ class MainWindow:
         tk.Button(f, text="Aléatoire", command=self._sanzo_random).pack(side="left", padx=6)
         tk.Button(f, text="⇅ Inverser", command=self._reverse_palette).pack(side="left", padx=6)
         self._update_sanzo_label()
+
+    def _build_interior_controls(self, parent):
+        f = tk.LabelFrame(parent, text="Coloriage intérieur")
+        f.pack(padx=10, pady=4, fill="x")
+        radio_row = tk.Frame(f)
+        radio_row.pack(fill="x", padx=6, pady=(4, 2))
+        for label, value in (("Escape", "escape"), ("Période", "period"),
+                              ("Attracteur", "attractor"), ("Lambda λ", "lambda")):
+            tk.Radiobutton(radio_row, text=label, variable=self.coloring_mode,
+                           value=value, command=self._recompute_fractal).pack(side="left", padx=8)
+        norm_row = tk.Frame(f)
+        norm_row.pack(fill="x", padx=6, pady=(0, 2))
+        tk.Label(norm_row, text="norm", width=6).pack(side="left")
+        tk.Scale(norm_row, from_=0.01, to=1000.0, resolution=1.0, orient="horizontal",
+                 length=220, variable=self.attractor_norm,
+                 command=self._recompute_fractal).pack(side="left")
+        burn_row = tk.Frame(f)
+        burn_row.pack(fill="x", padx=6, pady=(0, 4))
+        tk.Label(burn_row, text="burn-in", width=6).pack(side="left")
+        tk.Scale(burn_row, from_=10, to=500, resolution=10, orient="horizontal",
+                 length=220, variable=self.lambda_burn_in,
+                 command=self._recompute_fractal).pack(side="left")
 
     def _build_palette_controls(self, parent=None):
         if parent is None:
@@ -1072,7 +1109,18 @@ class MainWindow:
         else:
             self.img_rgba = None
             self.img_preview = None
-            self.V_preview = render.downscale_field(gen.generate_julia(poly), k)
+            mode = self.coloring_mode.get()
+            if mode == "period":
+                V = gen.generate_julia_period(poly)
+            elif mode == "attractor":
+                V = gen.generate_julia_attractor(poly, norm_max=self.attractor_norm.get())
+            elif mode == "lambda":
+                V = gen.generate_julia_lambda(poly,
+                                               burn_in=self.lambda_burn_in.get(),
+                                               norm_max=self.attractor_norm.get())
+            else:
+                V = gen.generate_julia(poly)
+            self.V_preview = render.downscale_field(V, k)
         self._redraw_fractal()
 
     def _redraw_fractal(self):
@@ -1134,7 +1182,19 @@ class MainWindow:
                 gen.generate_julia_trap(poly, trap_type, trap_params,
                                         norm_max=self.trap_norm_max.get()), k)
         else:
-            V_full = render.downscale_field(gen.generate_julia(poly), k)
+            mode = self.coloring_mode.get()
+            if mode == "period":
+                V_full = render.downscale_field(gen.generate_julia_period(poly), k)
+            elif mode == "attractor":
+                V_full = render.downscale_field(
+                    gen.generate_julia_attractor(poly, norm_max=self.attractor_norm.get()), k)
+            elif mode == "lambda":
+                V_full = render.downscale_field(
+                    gen.generate_julia_lambda(poly,
+                                              burn_in=self.lambda_burn_in.get(),
+                                              norm_max=self.attractor_norm.get()), k)
+            else:
+                V_full = render.downscale_field(gen.generate_julia(poly), k)
         return self._coloriser(V_full)
 
     def _show_hd_popup(self, *_):
