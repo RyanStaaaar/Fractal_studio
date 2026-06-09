@@ -188,6 +188,10 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
     Untrapped pixels have alpha=0.
 
     Returns uint8 (H, W, 4) RGBA.
+
+    Unlike trap_image_julia, there is no min_iter guard — the trap fires from
+    iteration 0. This is intentional: geometric series copies are designed to
+    capture early orbit transients that reveal fractal structure.
     """
     H, W = Z.shape
     TH, TW = tex.shape[0], tex.shape[1]
@@ -231,8 +235,8 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
                     if -hw <= local_re <= hw and -hh <= local_im <= hh:
                         u = (local_re + hw) / (base_size * sc_k)
                         v = (hh - local_im) / (base_size * sc_k * aspect)
-                        tj = int(u * float(TW - 1) + 0.5)
-                        ti = int(v * float(TH - 1) + 0.5)
+                        tj = int(math.floor(u * float(TW - 1) + 0.5))
+                        ti = int(math.floor(v * float(TH - 1) + 0.5))
                         if 0 <= ti < TH and 0 <= tj < TW:
                             if tex[ti, tj, 3] != 0:
                                 out[y, x, 0] = tex[ti, tj, 0]
