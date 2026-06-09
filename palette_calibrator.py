@@ -6,6 +6,12 @@ Pour chaque combinaison, teste toutes les permutations d'ordre des couleurs
 et choisit le nombre de miroir (1–3). Les choix sont enregistrés dans
 data/palette_calibration.xlsx.
 
+Raccourcis clavier :
+  Entrée   → Valider & Suivant
+  →        → Next (prochaine perm / miroir / palette)
+  ←        → Palette précédente
+  Space    → Aléatoire (nouvelle fractale, même palette)
+
 Lancement :  myenv/bin/python palette_calibrator.py
 """
 
@@ -31,10 +37,8 @@ MODE          = "oklab"
 SMOOTH        = True
 EQUALIZE      = True
 CLIP_LIMIT    = 5.5
-TRAP_CX       = 0.0
-TRAP_CY       = 0.0
 TRAP_NORM_MAX = 0.5
-JULIA_C       = complex(-0.7, 0.27)             # Julia canonique pour comparaisons cohérentes
+TRAP_SIGMA    = 0.5   # écart-type N(0, σ) pour le centre du trap
 
 EXCEL_PATH = Path(__file__).parent / "data" / "palette_calibration.xlsx"
 HEADERS    = ["palette_index", "name", "perm_index", "color_order", "mirror", "validated_at"]
@@ -56,10 +60,18 @@ def _make_palette(colors: list) -> list:
     return [pos, [list(c) for c in colors]]
 
 
+def _random_fractal_params() -> tuple:
+    """Retourne (julia_c, trap_cx, trap_cy) aléatoires."""
+    gen = fractal.FractalGenerator(PREVIEW_H, PREVIEW_W, N_ITER, smooth=SMOOTH)
+    c  = gen.pick_interesting_c()
+    cx = float(np.random.normal(0.0, TRAP_SIGMA))
+    cy = float(np.random.normal(0.0, TRAP_SIGMA))
+    return c, cx, cy
+
+
 # ── Excel I/O ─────────────────────────────────────────────────────────────────
 
-def _load_validated() -> dict[int, dict]:
-    """Charge le fichier Excel → dict[palette_index → {perm_index, mirror}]."""
+def _load_validated() -> dict:
     if not EXCEL_PATH.exists():
         return {}
     wb = openpyxl.load_workbook(EXCEL_PATH)
@@ -100,29 +112,23 @@ def _save_entry(idx: int, name: str, perm_index: int,
 # ── Widget : frame scrollable ─────────────────────────────────────────────────
 
 class _ScrollFrame(tk.Frame):
-    """Frame avec scrollbar verticale interne."""
     def __init__(self, parent, **kw):
         super().__init__(parent, **kw)
         bg = kw.get("bg", "#1e1e1e")
-        self._canvas = tk.Canvas(self, bg=bg, highlightthickness=0)
-        sb = tk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
-        self._canvas.configure(yscrollcommand=sb.set)
+        self._cv = tk.Canvas(self, bg=bg, highlightthickness=0)
+        sb = tk.Scrollbar(self, orient="vertical", command=self._cv.yview)
+        self._cv.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        self._canvas.pack(side="left", fill="both", expand=True)
-        self.inner = tk.Frame(self._canvas, bg=bg)
-        self._win_id = self._canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", self._on_inner_configure)
-        self._canvas.bind("<Configure>", self._on_canvas_configure)
-        self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-
-    def _on_inner_configure(self, _e):
-        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
-
-    def _on_canvas_configure(self, e):
-        self._canvas.itemconfig(self._win_id, width=e.width)
-
-    def _on_mousewheel(self, e):
-        self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        self._cv.pack(side="left", fill="both", expand=True)
+        self.inner = tk.Frame(self._cv, bg=bg)
+        self._wid = self._cv.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", lambda _e: self._cv.configure(
+            scrollregion=self._cv.bbox("all")))
+        self._cv.bind("<Configure>", lambda e: self._cv.itemconfig(
+            self._wid, width=e.width))
+        self._cv.bind_all("<MouseWheel>",
+                          lambda e: self._cv.yview_scroll(
+                              int(-1 * (e.delta / 120)), "units"))
 
 
 # ── Application principale ────────────────────────────────────────────────────
@@ -132,41 +138,53 @@ class PaletteCalibrator:
         self.palettes  = render.load_sanzo_palettes()
         self.names     = render.load_sanzo_names()
         self.validated = _load_validated()
-        self.idx       = 0
-        self._cache_V  = None   # champ scalaire mis en cache par palette
 
-        # Trouver la première palette non validée
-        for i in range(len(self.palettes)):
-            if i not in self.validated:
-                self.idx = i
-                break
+        # Paramètres fractale courants (randomisés à chaque nouvelle palette)
+        self._julia_c = complex(-0.7, 0.27)
+        self._trap_cx = 0.0
+        self._trap_cy = 0.0
+        self._cache_V = None
+
+        # Première palette non validée
+        self.idx = next(
+            (i for i in range(len(self.palettes)) if i not in self.validated), 0)
 
         self.root = tk.Tk()
         self.root.title("Calibration Palettes Sanzo Wada")
         self.root.configure(bg="#1e1e1e")
         self._build_ui()
         self._load_palette(self.idx)
-        self.root.bind("<Return>", lambda _: self._validate())
-        self.root.bind("<Right>",  lambda _: self._skip())
-        self.root.bind("<Left>",   lambda _: self._prev())
+
+        self.root.bind("<Return>", lambda _e: self._validate())
+        self.root.bind("<Right>",  lambda _e: self._next_step())
+        self.root.bind("<Left>",   lambda _e: self._prev_palette())
+        self.root.bind("<space>",  lambda _e: self._randomize())
 
     # ── Construction de l'UI ──────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Barre de navigation ──────────────────────────────────────────────
-        nav = tk.Frame(self.root, bg="#1e1e1e")
+        BG = "#1e1e1e"
+
+        # Barre navigation + actions
+        nav = tk.Frame(self.root, bg=BG)
         nav.pack(fill="x", padx=10, pady=(8, 0))
 
-        tk.Button(nav, text="← Préc",  command=self._prev,
+        tk.Button(nav, text="← Palette", command=self._prev_palette,
                   bg="#333", fg="white", relief="flat", padx=6).pack(side="left", padx=2)
-        tk.Button(nav, text="Suiv →",  command=self._skip,
+        tk.Button(nav, text="Palette →", command=self._next_palette,
                   bg="#333", fg="white", relief="flat", padx=6).pack(side="left", padx=2)
+        tk.Button(nav, text="Next →",    command=self._next_step,
+                  bg="#3a5f8a", fg="white", relief="flat", padx=8,
+                  font=("Helvetica", 10, "bold")).pack(side="left", padx=6)
+        tk.Button(nav, text="⇄ Aléatoire", command=self._randomize,
+                  bg="#5a4a1e", fg="#f5d078", relief="flat",
+                  padx=6).pack(side="left", padx=2)
 
-        self._nav_label = tk.Label(nav, text="", bg="#1e1e1e", fg="#bbb",
+        self._nav_label = tk.Label(nav, text="", bg=BG, fg="#bbb",
                                     font=("Helvetica", 11))
         self._nav_label.pack(side="left", padx=14)
 
-        self._status_label = tk.Label(nav, text="", bg="#1e1e1e", fg="#5a5",
+        self._status_label = tk.Label(nav, text="", bg=BG, fg="#5a5",
                                        font=("Helvetica", 10))
         self._status_label.pack(side="right", padx=10)
 
@@ -174,72 +192,79 @@ class PaletteCalibrator:
                   bg="#2a7a2a", fg="white", font=("Helvetica", 11, "bold"),
                   relief="flat", padx=10).pack(side="right", padx=6)
 
-        # ── Barre de progression ─────────────────────────────────────────────
-        prog_bar_frame = tk.Frame(self.root, bg="#1e1e1e")
-        prog_bar_frame.pack(fill="x", padx=10, pady=(4, 0))
-        self._prog_label = tk.Label(prog_bar_frame, text="", bg="#1e1e1e",
-                                     fg="#666", font=("Helvetica", 9))
-        self._prog_label.pack(side="left")
+        # Barre infos fractale + progression
+        info = tk.Frame(self.root, bg=BG)
+        info.pack(fill="x", padx=10, pady=(3, 0))
 
-        # ── Corps principal ──────────────────────────────────────────────────
-        body = tk.Frame(self.root, bg="#1e1e1e")
+        self._fractal_label = tk.Label(info, text="", bg=BG, fg="#555",
+                                        font=("Courier", 9))
+        self._fractal_label.pack(side="left")
+
+        self._prog_label = tk.Label(info, text="", bg=BG, fg="#666",
+                                     font=("Helvetica", 9))
+        self._prog_label.pack(side="right")
+
+        # Corps principal
+        body = tk.Frame(self.root, bg=BG)
         body.pack(fill="both", expand=True, padx=10, pady=8)
 
         # Prévisualisation (gauche)
-        preview_frame = tk.Frame(body, bg="#000", bd=1, relief="solid")
-        preview_frame.pack(side="left", padx=(0, 10))
-        self._canvas_lbl = tk.Label(preview_frame, bg="#000",
-                                     width=PREVIEW_W, height=PREVIEW_H)
+        pf = tk.Frame(body, bg="#000", bd=1, relief="solid")
+        pf.pack(side="left", padx=(0, 10))
+        self._canvas_lbl = tk.Label(pf, bg="#000", width=PREVIEW_W, height=PREVIEW_H)
         self._canvas_lbl.pack()
 
         # Panneau de droite
-        right = tk.Frame(body, bg="#1e1e1e")
+        right = tk.Frame(body, bg=BG)
         right.pack(side="left", fill="y")
 
         # Ordre des couleurs (scrollable)
         perm_outer = tk.LabelFrame(right, text="Ordre des couleurs",
-                                    bg="#1e1e1e", fg="#ccc", bd=1,
+                                    bg=BG, fg="#ccc", bd=1,
                                     font=("Helvetica", 10, "bold"))
         perm_outer.pack(fill="both", expand=True, pady=(0, 8))
-        self._scroll_frame = _ScrollFrame(perm_outer, bg="#1e1e1e",
-                                           height=260, width=240)
+        self._scroll_frame = _ScrollFrame(perm_outer, bg=BG, height=240, width=240)
         self._scroll_frame.pack(fill="both", expand=True, padx=4, pady=4)
         self._perm_var = tk.IntVar(value=0)
 
         # Miroir
         mirror_frame = tk.LabelFrame(right, text="Miroir (repeat)",
-                                      bg="#1e1e1e", fg="#ccc", bd=1,
+                                      bg=BG, fg="#ccc", bd=1,
                                       font=("Helvetica", 10, "bold"))
         mirror_frame.pack(fill="x")
-        self._mirror_var = tk.IntVar(value=2)
+        self._mirror_var = tk.IntVar(value=1)
         for v in (1, 2, 3):
             tk.Radiobutton(mirror_frame, text=str(v), variable=self._mirror_var,
-                           value=v, bg="#1e1e1e", fg="white",
-                           activebackground="#1e1e1e", activeforeground="white",
+                           value=v, bg=BG, fg="white",
+                           activebackground=BG, activeforeground="white",
                            selectcolor="#333",
                            command=self._on_setting_change).pack(
                                side="left", padx=14, pady=6)
 
+        # Indicateur de séquence
+        self._seq_label = tk.Label(right, text="", bg=BG, fg="#555",
+                                    font=("Helvetica", 9))
+        self._seq_label.pack(pady=(6, 0), anchor="w")
+
     # ── Chargement d'une palette ──────────────────────────────────────────────
 
     def _load_palette(self, idx: int):
-        self.idx = idx % len(self.palettes)
-        base_colors  = self.palettes[self.idx][1]
-        self._perms  = _all_perms(base_colors)
-        self._cache_V = None   # forcer recalcul pour la nouvelle palette
+        self.idx    = idx % len(self.palettes)
+        self._perms = _all_perms(self.palettes[self.idx][1])
 
         saved = self.validated.get(self.idx)
         self._perm_var.set(saved["perm_index"] if saved else 0)
-        self._mirror_var.set(saved["mirror"]      if saved else 2)
+        self._mirror_var.set(saved["mirror"]    if saved else 1)
 
         self._rebuild_perm_radios()
         self._update_labels()
+        # Nouvelle fractale aléatoire pour chaque nouvelle palette
+        self._randomize(refresh=False)
         self._refresh_preview()
 
     def _rebuild_perm_radios(self):
         for w in self._scroll_frame.inner.winfo_children():
             w.destroy()
-
         for pi, perm in enumerate(self._perms):
             row = tk.Frame(self._scroll_frame.inner, bg="#1e1e1e")
             row.pack(fill="x", padx=2, pady=1)
@@ -250,35 +275,29 @@ class PaletteCalibrator:
             for rgb in perm:
                 tk.Label(row, width=3, bg=_hexcolor(rgb),
                          relief="flat").pack(side="left", padx=1)
-            # petit indicateur hex
-            hex_str = "  " + "  ".join(_hexcolor(c) for c in perm)
-            tk.Label(row, text=hex_str, bg="#1e1e1e", fg="#555",
-                     font=("Courier", 8)).pack(side="left", padx=4)
 
     # ── Rendu ─────────────────────────────────────────────────────────────────
 
     def _refresh_preview(self):
+        if self._cache_V is None:
+            gen  = fractal.FractalGenerator(PREVIEW_H, PREVIEW_W, N_ITER, smooth=SMOOTH)
+            poly = iteration.Poly(1, 0, self._julia_c)
+            self._cache_V = gen.generate_julia_trap(
+                poly, trap_type=0,
+                trap_params=np.array([self._trap_cx, self._trap_cy, 0.0]),
+                norm_max=TRAP_NORM_MAX)
+
         pi     = self._perm_var.get()
         mirror = self._mirror_var.get()
-        colors = self._perms[pi]
-
-        if self._cache_V is None:
-            gen = fractal.FractalGenerator(PREVIEW_H, PREVIEW_W, N_ITER, smooth=SMOOTH)
-            poly = iteration.Poly(1, 0, JULIA_C)
-            trap_params = np.array([TRAP_CX, TRAP_CY, 0.0])
-            self._cache_V = gen.generate_julia_trap(
-                poly, trap_type=0, trap_params=trap_params, norm_max=TRAP_NORM_MAX)
-
-        palette  = _make_palette(colors)
-        renderer = render.FractalRenderer(palette, mode=MODE, n_iter=N_ITER,
-                                           repeat=mirror, equalize=EQUALIZE,
-                                           clip_limit=CLIP_LIMIT)
+        renderer = render.FractalRenderer(
+            _make_palette(self._perms[pi]), mode=MODE, n_iter=N_ITER,
+            repeat=mirror, equalize=EQUALIZE, clip_limit=CLIP_LIMIT)
         arr = renderer.render(self._cache_V)
-        pil = Image.fromarray(arr)
-        self._tk_img = ImageTk.PhotoImage(pil)
+        self._tk_img = ImageTk.PhotoImage(Image.fromarray(arr))
         self._canvas_lbl.config(image=self._tk_img)
+        self._update_seq_label()
 
-    # ── Mise à jour des labels ────────────────────────────────────────────────
+    # ── Labels ────────────────────────────────────────────────────────────────
 
     def _update_labels(self):
         n    = len(self.palettes)
@@ -286,7 +305,7 @@ class PaletteCalibrator:
         self._nav_label.config(
             text=f"{self.idx + 1} / {n}  ·  {self.names[self.idx]}")
         self._prog_label.config(
-            text=f"{done} / {n} validées  ({100*done//n}%)")
+            text=f"{done} / {n} validées  ({100 * done // n}%)")
         saved = self.validated.get(self.idx)
         if saved:
             self._status_label.config(
@@ -295,32 +314,70 @@ class PaletteCalibrator:
         else:
             self._status_label.config(text="non validé", fg="#666")
 
+    def _update_fractal_label(self):
+        c = self._julia_c
+        self._fractal_label.config(
+            text=f"c = {c.real:+.4f}{c.imag:+.4f}j   "
+                 f"trap ({self._trap_cx:+.3f}, {self._trap_cy:+.3f})")
+
+    def _update_seq_label(self):
+        pi     = self._perm_var.get()
+        mirror = self._mirror_var.get()
+        n_p    = len(self._perms)
+        step   = pi * 3 + mirror
+        total  = n_p * 3
+        self._seq_label.config(
+            text=f"étape {step}/{total}  ·  perm {pi}/{n_p - 1}  ·  miroir {mirror}")
+
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def _on_setting_change(self):
         self._refresh_preview()
 
+    def _randomize(self, refresh: bool = True):
+        """Nouvelle fractale aléatoire — garde palette/perm/miroir."""
+        c, cx, cy     = _random_fractal_params()
+        self._julia_c = c
+        self._trap_cx = cx
+        self._trap_cy = cy
+        self._cache_V = None
+        self._update_fractal_label()
+        if refresh:
+            self._refresh_preview()
+
+    def _next_step(self):
+        """Séquence : miroir 1→2→3 → perm suivante → palette suivante."""
+        pi     = self._perm_var.get()
+        mirror = self._mirror_var.get()
+        if mirror < 3:
+            self._mirror_var.set(mirror + 1)
+            self._refresh_preview()
+        elif pi < len(self._perms) - 1:
+            self._perm_var.set(pi + 1)
+            self._mirror_var.set(1)
+            self._refresh_preview()
+        else:
+            self._load_palette(self.idx + 1)
+
     def _validate(self):
         pi     = self._perm_var.get()
         mirror = self._mirror_var.get()
-        colors = self._perms[pi]
-        _save_entry(self.idx, self.names[self.idx], pi, colors, mirror)
+        _save_entry(self.idx, self.names[self.idx], pi,
+                    self._perms[pi], mirror)
         self.validated[self.idx] = {"perm_index": pi, "mirror": mirror}
         self._update_labels()
-        # Avancer à la prochaine palette non validée
-        start = self.idx + 1
-        for offset in range(len(self.palettes)):
-            candidate = (start + offset) % len(self.palettes)
+        # Prochaine palette non validée
+        for offset in range(1, len(self.palettes) + 1):
+            candidate = (self.idx + offset) % len(self.palettes)
             if candidate not in self.validated:
                 self._load_palette(candidate)
                 return
-        # Toutes validées
         self._load_palette(self.idx + 1)
 
-    def _skip(self):
+    def _next_palette(self):
         self._load_palette(self.idx + 1)
 
-    def _prev(self):
+    def _prev_palette(self):
         self._load_palette(self.idx - 1)
 
     # ── Lancement ─────────────────────────────────────────────────────────────
