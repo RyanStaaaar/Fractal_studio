@@ -965,10 +965,13 @@ class MainWindow:
                          self.img_trap_im_min.get(), self.img_trap_im_max.get()])
 
     def _composite_img_trap(self):
-        """Composite self.img_rgba avec la couleur de fond de la palette; applique le lissage."""
+        """Composite self.img_rgba avec la couleur de fond; applique le lissage."""
         if self.img_rgba is None:
             return
-        bg = np.array(self.palette[1][0], dtype=np.uint8)
+        if self._img_geom_active:
+            bg = np.zeros(3, dtype=np.uint8)          # geom mode: black background
+        else:
+            bg = np.array(self.palette[1][0], dtype=np.uint8)
         rgb = self.img_rgba[:, :, :3].copy()
         rgb[self.img_rgba[:, :, 3] == 0] = bg
         if self.img_smooth_var.get():
@@ -1129,11 +1132,23 @@ class MainWindow:
                                        smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
         if self.img_trap_enabled.get() and self.img_trap_tex is not None:
-            rect = self._img_trap_rect()
-            rgba_hi = gen.generate_julia_image_trap(
-                poly, self.img_trap_tex, rect,
-                min_iter=self.img_trap_min_iter.get(),
-                angle=math.radians(self.img_trap_angle_deg.get()))
+            if self.img_trap_mode.get() == "geom":
+                self._img_geom_active = True
+                rgba_hi = gen.generate_julia_geom_trap(
+                    poly, self.img_trap_tex,
+                    N=self.trap_geom_N.get(),
+                    r=self.trap_geom_r.get(),
+                    cx=self.trap_geom_cx.get(),
+                    cy=self.trap_geom_cy.get(),
+                    base_size=self.trap_geom_size.get(),
+                    angle_step=math.radians(self.trap_geom_angle.get()))
+            else:
+                self._img_geom_active = False
+                rect = self._img_trap_rect()
+                rgba_hi = gen.generate_julia_image_trap(
+                    poly, self.img_trap_tex, rect,
+                    min_iter=self.img_trap_min_iter.get(),
+                    angle=math.radians(self.img_trap_angle_deg.get()))
             if k > 1:
                 pil = Image.fromarray(rgba_hi).resize(
                     (self.PREVIEW_W, self.PREVIEW_H), Image.LANCZOS)
@@ -1203,18 +1218,29 @@ class MainWindow:
                                        smooth=self._smooth_now(), transform=self.transform)
         poly = iteration.Poly(1, 0, self._current_c())
         if self.img_trap_enabled.get() and self.img_trap_tex is not None:
-            rect = self._img_trap_rect()
-            rgba_hi = gen.generate_julia_image_trap(
-                poly, self.img_trap_tex, rect,
-                min_iter=self.img_trap_min_iter.get(),
-                angle=math.radians(self.img_trap_angle_deg.get()))
+            if self.img_trap_mode.get() == "geom":
+                rgba_hi = gen.generate_julia_geom_trap(
+                    poly, self.img_trap_tex,
+                    N=self.trap_geom_N.get(),
+                    r=self.trap_geom_r.get(),
+                    cx=self.trap_geom_cx.get(),
+                    cy=self.trap_geom_cy.get(),
+                    base_size=self.trap_geom_size.get(),
+                    angle_step=math.radians(self.trap_geom_angle.get()))
+                bg = np.zeros(3, dtype=np.uint8)  # black background for geom mode
+            else:
+                rect = self._img_trap_rect()
+                rgba_hi = gen.generate_julia_image_trap(
+                    poly, self.img_trap_tex, rect,
+                    min_iter=self.img_trap_min_iter.get(),
+                    angle=math.radians(self.img_trap_angle_deg.get()))
+                bg = np.array(self.palette[1][0], dtype=np.uint8)
             if k > 1:
                 pil = Image.fromarray(rgba_hi).resize(
                     (self.FULL_W, self.FULL_H), Image.LANCZOS)
                 rgba = np.array(pil)
             else:
                 rgba = rgba_hi
-            bg = np.array(self.palette[1][0], dtype=np.uint8)
             rgb = rgba[:, :, :3].copy()
             rgb[rgba[:, :, 3] == 0] = bg
             if self.img_smooth_var.get():
