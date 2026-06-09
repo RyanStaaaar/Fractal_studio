@@ -96,6 +96,62 @@ class FractalGenerator:
             C = self.transform(C)
         return orbit_trap.trap_image_mandelbrot(C, tex, rect, self.n_iter, 256.0, min_iter, angle)
 
+    def generate_julia_geom_trap(self, poly: iteration.Poly, tex: np.ndarray,
+                                  N: int = 4, r: float = 0.5,
+                                  cx: float = 0.0, cy: float = 0.0,
+                                  base_size: float = 1.0, angle_step: float = 0.0,
+                                  borne: float = 2) -> np.ndarray:
+        """Returns uint8 (H, W, 4) RGBA. Untrapped pixels have alpha=0."""
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        if self.transform is not None:
+            Z = self.transform(Z)
+        return orbit_trap.trap_image_geom_series_julia(
+            Z, poly.a, poly.b, poly.c, tex,
+            N, r, cx, cy, base_size, angle_step,
+            self.n_iter, 256.0
+        )
+
+    def generate_julia_period(self, poly: iteration.Poly, borne: float = 2,
+                               eps: float = 1e-6, max_period: int = 64) -> np.ndarray:
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        if self.transform is not None:
+            Z = self.transform(Z)
+        return iteration.julia_period(Z, poly.a, poly.b, poly.c,
+                                      self.n_iter, 256.0, eps, max_period)
+
+    def generate_julia_lambda(self, poly: iteration.Poly, borne: float = 2,
+                               burn_in: int = 100, norm_max: float = 500.0) -> np.ndarray:
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        if self.transform is not None:
+            Z = self.transform(Z)
+        return iteration.julia_lambda(Z, poly.a, poly.b, poly.c,
+                                      self.n_iter, 256.0, burn_in=burn_in,
+                                      norm_max=norm_max)
+
+    def generate_julia_attractor(self, poly: iteration.Poly, borne: float = 2,
+                                  norm_max: float = 0.5) -> np.ndarray:
+        borne_y = borne * self.height / self.width
+        xs = np.linspace(-borne, borne, self.width)
+        ys = np.linspace(-borne_y, borne_y, self.height)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        if self.transform is not None:
+            Z = self.transform(Z)
+        return iteration.julia_attractor(Z, poly.a, poly.b, poly.c,
+                                         self.n_iter, 256.0, norm_max)
+
     def generate_mosaic(self, n_sub: int = 11, tile_size: int = 100, borne_julia: float = 2, borne_c: float = 2) -> np.ndarray:
         meta_size = n_sub * tile_size
         V = np.zeros((meta_size, meta_size))
