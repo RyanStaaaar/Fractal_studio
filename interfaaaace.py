@@ -611,9 +611,17 @@ class MainWindow:
         f = tk.LabelFrame(parent, text="Trap par image (PNG détouré)")
         f.pack(padx=10, pady=4, fill="x")
 
+        # ── Always-visible: enable toggle + image loader ───────────────────
+        top_row = tk.Frame(f)
+        top_row.pack(fill="x", padx=6, pady=(4, 0))
+        tk.Checkbutton(top_row, text="Activer", variable=self.img_trap_enabled,
+                       command=self._recompute_fractal).pack(side="left")
+        tk.Button(top_row, text="Charger PNG…", command=self._load_trap_image).pack(side="left", padx=8)
+        tk.Label(top_row, textvariable=self.img_trap_path_var, anchor="w").pack(side="left")
+
         # ── Mode selector ──────────────────────────────────────────────────
         mode_row = tk.Frame(f)
-        mode_row.pack(fill="x", padx=6, pady=(4, 0))
+        mode_row.pack(fill="x", padx=6, pady=(2, 0))
         tk.Label(mode_row, text="Mode :").pack(side="left")
         for val, label in [("classique", "Classique"), ("geom", "Série géométrique")]:
             tk.Radiobutton(mode_row, text=label, variable=self.img_trap_mode, value=val,
@@ -648,13 +656,6 @@ class MainWindow:
         self.trap_rect_canvas.bind("<B1-Motion>",      self._trap_canvas_drag)
         self.trap_rect_canvas.bind("<ButtonRelease-1>",self._trap_canvas_release)
         tk.Label(canvas_frame, text="plan  [−5, 5]", fg="#666666", font=("", 8)).pack(pady=(2, 0))
-
-        row0 = tk.Frame(right)
-        row0.pack(fill="x", pady=2)
-        tk.Checkbutton(row0, text="Activer", variable=self.img_trap_enabled,
-                       command=self._recompute_fractal).pack(side="left")
-        tk.Button(row0, text="Charger PNG…", command=self._load_trap_image).pack(side="left", padx=8)
-        tk.Label(row0, textvariable=self.img_trap_path_var, anchor="w").pack(side="left")
 
         for label, var in (("Re min", self.img_trap_re_min), ("Re max", self.img_trap_re_max),
                            ("Im min", self.img_trap_im_min), ("Im max", self.img_trap_im_max)):
