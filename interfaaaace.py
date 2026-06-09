@@ -326,6 +326,7 @@ class MainWindow:
         tk.Button(f, text="▶", command=self._sanzo_next).pack(side="left", padx=2)
         tk.Button(f, text="Aléatoire", command=self._sanzo_random).pack(side="left", padx=6)
         tk.Button(f, text="⇅ Inverser", command=self._reverse_palette).pack(side="left", padx=6)
+        tk.Button(f, text="⇄ Mélanger", command=self._shuffle_palette).pack(side="left", padx=6)
         self._update_sanzo_label()
 
     def _build_interior_controls(self, parent):
@@ -1123,6 +1124,13 @@ class MainWindow:
         n = len(pos)
         self.palette[0] = [1.0 - pos[n - 1 - i] for i in range(n)]
         self.palette[1] = list(reversed(col))
+        self._populate_palette_rows()
+        self._apply_palette()
+
+    def _shuffle_palette(self):
+        col = self.palette[1][:]
+        random.shuffle(col)
+        self.palette[1] = col
         self._populate_palette_rows()
         self._apply_palette()
 
