@@ -611,7 +611,26 @@ class MainWindow:
         f = tk.LabelFrame(parent, text="Trap par image (PNG détouré)")
         f.pack(padx=10, pady=4, fill="x")
 
-        body = tk.Frame(f)
+        # ── Mode selector ──────────────────────────────────────────────────
+        mode_row = tk.Frame(f)
+        mode_row.pack(fill="x", padx=6, pady=(4, 0))
+        tk.Label(mode_row, text="Mode :").pack(side="left")
+        for val, label in [("classique", "Classique"), ("geom", "Série géométrique")]:
+            tk.Radiobutton(mode_row, text=label, variable=self.img_trap_mode, value=val,
+                           command=self._on_img_trap_mode_change).pack(side="left", padx=4)
+
+        # ── Classic controls (existing layout) ─────────────────────────────
+        self._img_classic_frame = tk.Frame(f)
+        self._img_classic_frame.pack(fill="x")
+        self._build_img_classic_controls(self._img_classic_frame)
+
+        # ── Geom controls (new) ────────────────────────────────────────────
+        self._img_geom_frame = tk.Frame(f)
+        # not packed yet — shown only when mode == "geom"
+        self._build_img_geom_controls(self._img_geom_frame)
+
+    def _build_img_classic_controls(self, parent):
+        body = tk.Frame(parent)
         body.pack(fill="x", padx=4, pady=4)
 
         # — contrôles gauche (largeur naturelle) —
@@ -621,8 +640,7 @@ class MainWindow:
         # — aperçu plan complexe : prend tout l'espace restant —
         canvas_frame = tk.Frame(body)
         canvas_frame.pack(side="left", fill="both", expand=True, padx=(10, 2))
-        self.trap_rect_canvas = tk.Canvas(canvas_frame,
-                                           highlightthickness=0)
+        self.trap_rect_canvas = tk.Canvas(canvas_frame, highlightthickness=0)
         self.trap_rect_canvas.pack(fill="both", expand=True)
         self.trap_rect_canvas.bind("<Configure>",      lambda e: self._update_trap_rect_display())
         self.trap_rect_canvas.bind("<Motion>",         self._trap_canvas_hover)
@@ -665,6 +683,32 @@ class MainWindow:
                        command=self._on_img_smooth_toggle).pack(side="left")
 
         self._update_trap_rect_display()
+
+    def _build_img_geom_controls(self, parent):
+        geom_sliders = [
+            ("N (copies)",      self.trap_geom_N,     1,    8,    1),
+            ("r (ratio)",       self.trap_geom_r,     0.20, 0.90, 0.05),
+            ("Taille base",     self.trap_geom_size,  0.1,  4.0,  0.05),
+            ("Centre X",        self.trap_geom_cx,   -2.0,  2.0,  0.05),
+            ("Centre Y",        self.trap_geom_cy,   -2.0,  2.0,  0.05),
+            ("Rotation/copie°", self.trap_geom_angle, 0,    90,   5),
+        ]
+        for label, var, lo, hi, res in geom_sliders:
+            row = tk.Frame(parent)
+            row.pack(fill="x", padx=6)
+            tk.Label(row, text=label, width=14, anchor="w").pack(side="left")
+            tk.Scale(row, from_=lo, to=hi, resolution=res, orient="horizontal",
+                     length=220, variable=var,
+                     command=self._recompute_fractal).pack(side="left")
+
+    def _on_img_trap_mode_change(self):
+        if self.img_trap_mode.get() == "geom":
+            self._img_classic_frame.pack_forget()
+            self._img_geom_frame.pack(fill="x")
+        else:
+            self._img_geom_frame.pack_forget()
+            self._img_classic_frame.pack(fill="x")
+        self._recompute_fractal()
 
     def _on_img_rect_change(self, *_):
         self._update_trap_rect_display()
