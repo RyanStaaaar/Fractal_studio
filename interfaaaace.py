@@ -1164,10 +1164,12 @@ class MainWindow:
                                         norm_max=self.trap_norm_max.get())
             self.img_rgba = None
             self.img_preview = None
+            self._img_geom_active = False
             self.V_preview = render.downscale_field(V, k)
         else:
             self.img_rgba = None
             self.img_preview = None
+            self._img_geom_active = False
             mode = self.coloring_mode.get()
             if mode == "period":
                 V = gen.generate_julia_period(poly)
