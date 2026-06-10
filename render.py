@@ -225,20 +225,28 @@ def downscale_field(V: np.ndarray, k: int) -> np.ndarray:
     return V[:H2, :W2].reshape(H2 // k, k, W2 // k, k).mean(axis=(1, 3))
 
 
-def equalize_field(V: np.ndarray, clip_limit: float = 0.0) -> np.ndarray:
+def equalize_field(V: np.ndarray, clip_limit: float = 0.0,
+                   value_range: tuple | None = None) -> np.ndarray:
     """Égalisation d'histogramme à contraste limité (type CLAHE global).
 
     Remappe V par sa CDF pour répartir les couleurs. `clip_limit` borne l'effectif
     de chaque classe à `clip_limit ×` l'effectif moyen (l'excédent est redistribué) :
     cela empêche une zone dominante (le fond) de monopoliser la palette et préserve
     le contraste du détail. 0 = pas de limite (égalisation pure). V==0 reste à 0.
+
+    `value_range` : plage (lo, hi) fixe pour l'histogramme. Par défaut le min/max
+    des données est utilisé — pour une animation, fournir une plage fixe évite que
+    le remapping saute d'une frame à l'autre quand les extrêmes fluctuent.
     """
     eq = np.zeros_like(V, dtype=np.float64)
     mask = V > 0
     vals = V[mask]
     if vals.size == 0:
         return eq
-    lo, hi = float(vals.min()), float(vals.max())
+    if value_range is not None:
+        lo, hi = float(value_range[0]), float(value_range[1])
+    else:
+        lo, hi = float(vals.min()), float(vals.max())
     if hi <= lo:
         return eq
     bins = 1024
@@ -265,20 +273,22 @@ def mirror_repeat(V: np.ndarray, n: int) -> np.ndarray:
 
 class FractalRenderer:
     def __init__(self, palette: list, mode: str = "rgb", n_iter: int = 80, repeat: int = 1,
-                 equalize: bool = False, clip_limit: float = 3.0):
+                 equalize: bool = False, clip_limit: float = 3.0,
+                 eq_range: tuple | None = None):
         self.palette = palette
         self.mode = mode
         self.n_iter = n_iter
         self.repeat = repeat
         self.equalize = equalize
         self.clip_limit = clip_limit
+        self.eq_range = eq_range
 
     def render(self, V: np.ndarray) -> np.ndarray:
         if self.mode == "cyclic":
             return coloriser_cyclic(V, self.palette, self.n_iter)
         Vc = V
         if self.equalize:
-            Vc = equalize_field(Vc, self.clip_limit)
+            Vc = equalize_field(Vc, self.clip_limit, self.eq_range)
         if self.repeat > 1:
             Vc = mirror_repeat(Vc, self.repeat)
         if self.mode == "hsv":

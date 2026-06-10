@@ -286,3 +286,81 @@ def trap_julia(Z, a, b, c, trap_type, trap_params, n=100, B=256.0, norm_max=1.0)
                     break
             V[y, x] = 1.0 - math.exp(-min_d / norm_max)
     return V
+
+
+@njit(parallel=True, cache=True)
+def trap_julia_pow(Z, pow_n, c, trap_type, trap_params, n=100, B=256.0, norm_max=1.0):
+    """Julia orbit trap avec z → z^pow_n + c (puissance entière quelconque)."""
+    H, W = Z.shape
+    V = np.zeros((H, W))
+    B2 = B * B
+    for y in prange(H):
+        for x in range(W):
+            z = Z[y, x]
+            min_d = 1e18
+            for _ in range(n):
+                z_p = z
+                for _p in range(pow_n - 1):
+                    z_p = z_p * z
+                z = z_p + c
+                zr = z.real
+                zi = z.imag
+                if trap_type == 0:
+                    d = _dist_point(zr, zi, trap_params[0], trap_params[1])
+                elif trap_type == 1:
+                    d = _dist_line(zr, zi, trap_params[2])
+                elif trap_type == 2:
+                    d = _dist_cross(zr, zi)
+                elif trap_type == 3:
+                    d = _dist_circle(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                elif trap_type == 4:
+                    d = _dist_square(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                else:
+                    d = _dist_sinus(zr, zi, trap_params[0], trap_params[1],
+                                    trap_params[2], trap_params[3])
+                if d < min_d:
+                    min_d = d
+                if zr * zr + zi * zi > B2:
+                    break
+            V[y, x] = 1.0 - math.exp(-min_d / norm_max)
+    return V
+
+
+@njit(parallel=True, cache=True)
+def trap_julia_poly(Z, coeffs, c, trap_type, trap_params, n=100, B=256.0, norm_max=1.0):
+    """Julia orbit trap avec z -> p(z) + c, p evalue par methode de Horner.
+    coeffs[i] = coefficient de z^i, dtype complex128."""
+    H, W = Z.shape
+    V = np.zeros((H, W))
+    B2 = B * B
+    deg = len(coeffs) - 1
+    for y in prange(H):
+        for x in range(W):
+            z = Z[y, x]
+            min_d = 1e18
+            for _ in range(n):
+                result = coeffs[deg]
+                for i in range(deg - 1, -1, -1):
+                    result = result * z + coeffs[i]
+                z = result + c
+                zr = z.real
+                zi = z.imag
+                if trap_type == 0:
+                    d = _dist_point(zr, zi, trap_params[0], trap_params[1])
+                elif trap_type == 1:
+                    d = _dist_line(zr, zi, trap_params[2])
+                elif trap_type == 2:
+                    d = _dist_cross(zr, zi)
+                elif trap_type == 3:
+                    d = _dist_circle(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                elif trap_type == 4:
+                    d = _dist_square(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                else:
+                    d = _dist_sinus(zr, zi, trap_params[0], trap_params[1],
+                                    trap_params[2], trap_params[3])
+                if d < min_d:
+                    min_d = d
+                if zr * zr + zi * zi > B2:
+                    break
+            V[y, x] = 1.0 - math.exp(-min_d / norm_max)
+    return V
