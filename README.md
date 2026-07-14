@@ -12,8 +12,8 @@ on exporte en MP4.
 |:--:|:--:|
 | ![Orbit trap point](gallery/orbit_trap_point.gif) | ![Orbit trap cercle](gallery/orbit_trap_cercle.gif) |
 | Orbit trap **point** | Orbit trap **cercle** |
-| ![Biomorphe](gallery/biomorphe.png) | 
-| **Biomorphe** de Pickover | 
+| ![Biomorphe](gallery/biomorphe.png) | ![L'interface de Fractal Studio](gallery/fractal_studio.png) |
+| **Biomorphe** de Pickover | **L'interface** — modules, vélocités, export |
 
 ## Fonctionnalités
 
