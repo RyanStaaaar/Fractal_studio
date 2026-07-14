@@ -12,8 +12,8 @@ on exporte en MP4.
 |:--:|:--:|
 | ![Orbit trap point](gallery/orbit_trap_point.gif) | ![Orbit trap cercle](gallery/orbit_trap_cercle.gif) |
 | Orbit trap **point** | Orbit trap **cercle** |
-| ![Biomorphe](gallery/biomorphe.png) | ![Mosaïque de Julia](output/julia_couleur.jpg) |
-| **Biomorphe** de Pickover | **Chromavision** — palettes Sanzo Wada en OKLab |
+| ![Biomorphe](gallery/biomorphe.png) | ) |
+| **Biomorphe** de Pickover | |
 
 ## Fonctionnalités
 
