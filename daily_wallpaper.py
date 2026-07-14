@@ -18,11 +18,11 @@ class WallpaperApp:
     MODE = "oklab"        # interpolation des couleurs : "rgb" | "hsv" | "oklab" | "cyclic"
     SMOOTH = True         # lissage logarithmique (ignoré si MODE == "cyclic")
     REPEAT = random.randint(1, 2)
-    REPEAT = 1
+    REPEAT = 2
     EQUALIZE = True
     CLIP_LIMIT = 5.5
     SSAA = 4
-    TRANSFORM = "e^(1*z)"
+    TRANSFORM = "z"
     N_ITER = 100
     WIDTH, HEIGHT = 3024, 1964
 

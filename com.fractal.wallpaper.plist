@@ -7,15 +7,15 @@
 
     <key>ProgramArguments</key>
     <array>
-        <!-- À ÉDITER : python de ton venv (avec Pillow, numpy, numba installés) -->
-        <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/myenv/bin/python3.14</string>
-        <!-- À ÉDITER : chemin du wrapper, DANS le dossier du dépôt -->
-        <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project/wallpaper.py</string>
+        <!-- À ÉDITER : le python de ton venv (voir requirements.txt) -->
+        <string>/CHEMIN/VERS/Mandelbrot_project/myenv/bin/python3</string>
+        <!-- À ÉDITER : le générateur, DANS le dossier du dépôt -->
+        <string>/CHEMIN/VERS/Mandelbrot_project/daily_wallpaper.py</string>
     </array>
 
     <!-- À ÉDITER : le dossier du dépôt, pour que les imports (fractal, render...) résolvent -->
     <key>WorkingDirectory</key>
-    <string>/Users/ryanmounir/Desktop/INTERFAAAACE/Mandelbrot_project</string>
+    <string>/CHEMIN/VERS/Mandelbrot_project</string>
 
     <!-- tous les jours à 06:00 ; si le Mac dormait, launchd lance au réveil -->
     <key>StartCalendarInterval</key>

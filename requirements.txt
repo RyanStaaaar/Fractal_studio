@@ -1,3 +1,11 @@
-Pillow
-numpy
-numba
+# Dépendances de fractal_studio.py et daily_wallpaper.py
+numpy>=2.0
+numba>=0.60
+Pillow>=10.0
+scipy>=1.11           # path_reparam : lissage gaussien, corrélation de Spearman
+svgelements>=1.9      # svg_trap : géométrie SVG vectorielle (traps image / géométrique)
+imageio>=2.30         # export MP4
+imageio-ffmpeg>=0.5   # encodeur H.264 pour imageio
+
+# Tests : pip install pytest
+# Scripts archivés (legacy/) : voir requirements-legacy.txt

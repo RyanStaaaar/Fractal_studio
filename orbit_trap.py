@@ -38,6 +38,29 @@ def _dist_square(zr, zi, cx, cy, r):
 
 
 @njit(cache=True)
+def _dist_ring(zr, zi, cx, cy, r, tilt, phi):
+    # Anneau 3D en projection orthographique : ellipse de demi-axes
+    # a = r (grand axe, orienté à phi + 90°) et b = r·|cos(tilt)|.
+    a = r
+    b = r * abs(math.cos(tilt))
+    if b < 1e-4 * r:
+        b = 1e-4 * r          # vue par la tranche : quasi-segment
+    psi = phi + math.pi / 2.0
+    dx = zr - cx
+    dy = zi - cy
+    cs = math.cos(psi)
+    sn = math.sin(psi)
+    px = abs(dx * cs + dy * sn)   # repère de l'ellipse
+    py = abs(-dx * sn + dy * cs)
+    # Approximation analytique de la distance à l'ellipse (Inigo Quilez)
+    k0 = math.sqrt((px / a) ** 2 + (py / b) ** 2)
+    k1 = math.sqrt((px / (a * a)) ** 2 + (py / (b * b)) ** 2)
+    if k1 < 1e-12:
+        return b                  # point au centre exact
+    return abs(k0 * (k0 - 1.0) / k1)
+
+
+@njit(cache=True)
 def _dist_sinus(zr, zi, cx, cy, amp, freq):
     # distance verticale au point de la courbe  y = cy + amp·sin(freq·(x − cx))
     return abs(zi - cy - amp * math.sin(freq * (zr - cx)))
@@ -61,13 +84,17 @@ def trap_mandelbrot(C, trap_type, trap_params, n=100, B=256.0, norm_max=1.0):
                 if trap_type == 0:
                     d = _dist_point(zr, zi, trap_params[0], trap_params[1])
                 elif trap_type == 1:
-                    d = _dist_line(zr, zi, trap_params[2])
+                    d = _dist_line(zr - trap_params[0], zi - trap_params[1],
+                                   trap_params[2])
                 elif trap_type == 2:
-                    d = _dist_cross(zr, zi)
+                    d = _dist_cross(zr - trap_params[0], zi - trap_params[1])
                 elif trap_type == 3:
                     d = _dist_circle(zr, zi, trap_params[0], trap_params[1], trap_params[2])
                 elif trap_type == 4:
                     d = _dist_square(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                elif trap_type == 6:
+                    d = _dist_ring(zr, zi, trap_params[0], trap_params[1],
+                                   trap_params[2], trap_params[3], trap_params[4])
                 else:
                     d = _dist_sinus(zr, zi, trap_params[0], trap_params[1],
                                     trap_params[2], trap_params[3])
@@ -179,7 +206,7 @@ def trap_image_mandelbrot(C, tex, rect, n=100, B=256.0, min_iter=2, angle=0.0):
 
 @njit(parallel=True, cache=True)
 def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle_step,
-                                  n=100, B=256.0):
+                                  n=100, B=256.0, mandel=False):
     """Geometric-series image trap for Julia sets.
 
     Places N copies of tex in the complex plane: copy k has width base_size*r^k
@@ -220,7 +247,11 @@ def trap_image_geom_series_julia(Z, a, b, c, tex, N, r, cx, cy, base_size, angle
 
     for y in prange(H):
         for x in range(W):
-            z = Z[y, x]
+            if mandel:
+                c = Z[y, x]
+                z = 0j
+            else:
+                z = Z[y, x]
             hit = False
             for it in range(n):
                 z = a * z * z + b * z + c
@@ -270,13 +301,17 @@ def trap_julia(Z, a, b, c, trap_type, trap_params, n=100, B=256.0, norm_max=1.0)
                 if trap_type == 0:
                     d = _dist_point(zr, zi, trap_params[0], trap_params[1])
                 elif trap_type == 1:
-                    d = _dist_line(zr, zi, trap_params[2])
+                    d = _dist_line(zr - trap_params[0], zi - trap_params[1],
+                                   trap_params[2])
                 elif trap_type == 2:
-                    d = _dist_cross(zr, zi)
+                    d = _dist_cross(zr - trap_params[0], zi - trap_params[1])
                 elif trap_type == 3:
                     d = _dist_circle(zr, zi, trap_params[0], trap_params[1], trap_params[2])
                 elif trap_type == 4:
                     d = _dist_square(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                elif trap_type == 6:
+                    d = _dist_ring(zr, zi, trap_params[0], trap_params[1],
+                                   trap_params[2], trap_params[3], trap_params[4])
                 else:
                     d = _dist_sinus(zr, zi, trap_params[0], trap_params[1],
                                     trap_params[2], trap_params[3])
@@ -308,13 +343,17 @@ def trap_julia_pow(Z, pow_n, c, trap_type, trap_params, n=100, B=256.0, norm_max
                 if trap_type == 0:
                     d = _dist_point(zr, zi, trap_params[0], trap_params[1])
                 elif trap_type == 1:
-                    d = _dist_line(zr, zi, trap_params[2])
+                    d = _dist_line(zr - trap_params[0], zi - trap_params[1],
+                                   trap_params[2])
                 elif trap_type == 2:
-                    d = _dist_cross(zr, zi)
+                    d = _dist_cross(zr - trap_params[0], zi - trap_params[1])
                 elif trap_type == 3:
                     d = _dist_circle(zr, zi, trap_params[0], trap_params[1], trap_params[2])
                 elif trap_type == 4:
                     d = _dist_square(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                elif trap_type == 6:
+                    d = _dist_ring(zr, zi, trap_params[0], trap_params[1],
+                                   trap_params[2], trap_params[3], trap_params[4])
                 else:
                     d = _dist_sinus(zr, zi, trap_params[0], trap_params[1],
                                     trap_params[2], trap_params[3])
@@ -348,13 +387,17 @@ def trap_julia_poly(Z, coeffs, c, trap_type, trap_params, n=100, B=256.0, norm_m
                 if trap_type == 0:
                     d = _dist_point(zr, zi, trap_params[0], trap_params[1])
                 elif trap_type == 1:
-                    d = _dist_line(zr, zi, trap_params[2])
+                    d = _dist_line(zr - trap_params[0], zi - trap_params[1],
+                                   trap_params[2])
                 elif trap_type == 2:
-                    d = _dist_cross(zr, zi)
+                    d = _dist_cross(zr - trap_params[0], zi - trap_params[1])
                 elif trap_type == 3:
                     d = _dist_circle(zr, zi, trap_params[0], trap_params[1], trap_params[2])
                 elif trap_type == 4:
                     d = _dist_square(zr, zi, trap_params[0], trap_params[1], trap_params[2])
+                elif trap_type == 6:
+                    d = _dist_ring(zr, zi, trap_params[0], trap_params[1],
+                                   trap_params[2], trap_params[3], trap_params[4])
                 else:
                     d = _dist_sinus(zr, zi, trap_params[0], trap_params[1],
                                     trap_params[2], trap_params[3])

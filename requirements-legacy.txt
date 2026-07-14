@@ -1,0 +1,5 @@
+# Dépendances supplémentaires des scripts archivés dans legacy/
+# (à installer en plus de requirements.txt, seulement si tu les utilises)
+-r requirements.txt
+matplotlib>=3.8   # legacy/diagnose_path.py : tracés de diagnostic
+openpyxl>=3.1     # legacy/palette_calibrator.py : export xlsx

@@ -1,6 +1,21 @@
 __pycache__/
 *.pyc
 .DS_Store
+.pytest_cache/
+
+# Environnement virtuel
+myenv/
+venv/
+
+# Sorties générées
 output/
 docs/
 Exports/
+Wallpapers/
+*.mp4
+*.xlsx
+
+# Notes de travail locales
+.superpowers/
+.claude/
+Untitled.txt
