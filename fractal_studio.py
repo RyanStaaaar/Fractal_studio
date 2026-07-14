@@ -1353,7 +1353,7 @@ class FractalStudio:
         top = tk.Frame(self.root, bg=BG2)
         top.pack(fill="x")
 
-        tk.Label(top, text="DISNEYLAND", bg=BG2, fg=ACCENT,
+        tk.Label(top, text="FRACTAL STUDIO", bg=BG2, fg=ACCENT,
                  font=("Helvetica", 12, "bold"),
                  padx=14, pady=6).pack(side="left")
 
