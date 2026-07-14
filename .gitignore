@@ -15,6 +15,14 @@ Wallpapers/
 *.mp4
 *.xlsx
 
+# Galerie : on ne versionne que les visuels web optimisés du README.
+# Les sources haute résolution (GIF/MP4 d'export) restent locales.
+gallery/*
+!gallery/orbit_trap_point.gif
+!gallery/orbit_trap_cercle.gif
+!gallery/string_theory.gif
+!gallery/biomorphe.png
+
 # Notes de travail locales
 .superpowers/
 .claude/
