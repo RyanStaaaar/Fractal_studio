@@ -64,7 +64,7 @@ class WallpaperApp:
                                           repeat=self.REPEAT, equalize=self.EQUALIZE,
                                           clip_limit=self.CLIP_LIMIT)
         image = renderer.render(V)
-        today = random.randint(0, 100)
+        today = datetime.today().strftime("%Y-%m-%d")
         path = self.output_dir / f"wallpaper_{today}.png"
         renderer.save(image, path)
         print(f"[trap point ({cx:.3f}, {cy:.3f})]  image sauvegardée : {path}")
