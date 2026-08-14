@@ -25,6 +25,7 @@ class WallpaperApp:
     TRANSFORM = "z"
     N_ITER = 100
     WIDTH, HEIGHT = 3024, 1964
+    KEEP_LAST = 30        # fonds conservés dans Wallpapers/ (0 ou moins = tout garder)
 
     # Orbit trap (point) — position tirée d'une loi normale N(mu, sigma)
     TRAP_MU    = 0.0
@@ -76,9 +77,28 @@ class WallpaperApp:
         subprocess.run(["killall", "Dock"])
         print("dock relancé")
 
+    def _prune(self) -> list[Path]:
+        """Supprime les fonds les plus anciens, garde les KEEP_LAST plus récents.
+
+        Le tri se fait sur la date de modification, pas sur le nom : les anciens
+        noms aléatoires (wallpaper_7.png) trieraient après les noms datés.
+        Le plus récent — le fond actuellement affiché — n'est jamais supprimé.
+        """
+        if self.KEEP_LAST <= 0:
+            return []
+        wallpapers = sorted(self.output_dir.glob("wallpaper_*.png"),
+                            key=lambda p: p.stat().st_mtime)
+        stale = wallpapers[:-self.KEEP_LAST]
+        for path in stale:
+            path.unlink()
+        return stale
+
     def run(self) -> None:
         path = self.generate()
         self.set_as_wallpaper(path)
+        removed = self._prune()
+        if removed:
+            print(f"purge : {len(removed)} ancien(s) fond(s) supprimé(s)")
 
 
 if __name__ == "__main__":
